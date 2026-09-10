@@ -1,0 +1,10 @@
+prompt_language: en
+max_prompt_chars: 1800
+motion_style: natural_sentence
+supports_negative_prompt: true
+quality_triggers: "photorealistic, cinematic camera movement, smooth motion, high detail"
+defaults:
+  steps: 30
+  cfg: 7.0
+default_negative_prompts:
+  - "poor quality, glitching, static, deformed limbs, abrupt jumps"

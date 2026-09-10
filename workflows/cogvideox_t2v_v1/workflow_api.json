@@ -1,0 +1,43 @@
+{
+  "1": {
+    "class_type": "CogVideoModelLoader",
+    "inputs": {
+      "model_name": "CogVideoX-5b.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "cinematic action video"
+    }
+  },
+  "3": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "low quality, distorted"
+    }
+  },
+  "4": {
+    "class_type": "CogVideoSampler",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["2", 0],
+      "negative": ["3", 0],
+      "seed": 99999999,
+      "steps": 30,
+      "cfg": 7.0,
+      "length": 49,
+      "width": 1280,
+      "height": 720,
+      "fps": 24
+    }
+  },
+  "5": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["4", 0],
+      "frame_rate": 24,
+      "filename_prefix": "cogvideo_out"
+    }
+  }
+}

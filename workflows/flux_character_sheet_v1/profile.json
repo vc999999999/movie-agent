@@ -1,0 +1,14 @@
+{
+  "workflow_id": "flux_character_sheet_v1",
+  "version": "1.0.0",
+  "name": "Flux 角色与场景概念图工作流",
+  "generation_mode": "text_to_image",
+  "supported_aspect_ratios": ["16:9", "9:16", "1:1", "2.39:1"],
+  "min_vram_gb": 16,
+  "max_frames": 1,
+  "required_models": ["flux1-dev.safetensors"],
+  "required_nodes": ["KSampler", "CheckpointLoaderSimple", "EmptyLatentImage", "CLIPTextEncode", "VAEDecode", "SaveImage"],
+  "accepted_references": ["character", "style"],
+  "patch_map_path": "workflows/flux_character_sheet_v1/patch_map.json",
+  "workflow_path": "workflows/flux_character_sheet_v1/workflow_api.json"
+}

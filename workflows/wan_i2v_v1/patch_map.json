@@ -1,0 +1,12 @@
+{
+  "positive_prompt": {"node": "40", "input": "text", "required": true},
+  "negative_prompt": {"node": "41", "input": "text", "required": false},
+  "seed": {"node": "30", "input": "seed", "required": true},
+  "steps": {"node": "30", "input": "steps", "required": false},
+  "cfg": {"node": "30", "input": "cfg", "required": false},
+  "frame_count": {"node": "30", "input": "length", "required": true},
+  "width": {"node": "30", "input": "width", "required": true},
+  "height": {"node": "30", "input": "height", "required": true},
+  "fps": {"node": "30", "input": "fps", "required": false},
+  "first_frame": {"node": "20", "input": "image", "required": false}
+}

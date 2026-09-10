@@ -1,0 +1,65 @@
+{
+  "10": {
+    "class_type": "WanVideoModelLoader",
+    "inputs": {
+      "model_name": "Wan2.1-I2V-14B-720P.safetensors"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "first_frame.png"
+    }
+  },
+  "30": {
+    "class_type": "WanVideoSampler",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "image": [
+        "20",
+        0
+      ],
+      "positive": [
+        "40",
+        0
+      ],
+      "negative": [
+        "41",
+        0
+      ],
+      "seed": 34336433,
+      "steps": 30,
+      "cfg": 6.0,
+      "length": 108,
+      "width": 1280,
+      "height": 720,
+      "fps": 24
+    }
+  },
+  "40": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "[Style]: 赛博朋克雨夜写实电影感，霓虹倒影，冷暖高对比度调色，35mm胶片质感. [Characters]: 沉着冷酷的私家侦探 (深邃坚毅的眼神，留着稀疏胡茬，黑发在雨水中被打湿贴在额头, wearing 穿着经典深灰防水风衣，立起衣领，内搭黑色高领毛衣与战术皮靴). [Environment]: Location: 雨夜窄巷与霓虹废墟, 潮湿反光的湿漉青石路面，两侧斑驳旧砖墙贴满破旧海报，头顶错落交织的电线与泛着幽蓝光芒的霓虹招牌在雨水中闪烁, time: 深夜暴雨, lighting: 雨水倒影中的冷调幽蓝与品红霓虹高光，局部阴影浓重, weather: 强暴雨，伴随升腾的地面水汽. [Setup]: Start frame: 主角中近景，大雨顺着风衣帽檐不断滴落，右手拔出腰间配枪. [Subject Action]: Action: 远处阴影中一道黑袍人影急速掠过，主角毫不犹豫疾步狂奔破开雨帘追赶. [Camera]: Cinematography: shot size MS, angle 手持跟随微仰, movement 高速推轨跟拍, composition 动态对角线构图, lens: 35mm Anamorphic Prime. [Lighting & Mood]: Lighting: 破损招牌闪烁电弧产生的频闪硬光, mood: 狂暴紧张. [Rendering]: cinematic film lighting, photorealistic, 4k resolution, fluid natural movement, high dynamic range"
+    }
+  },
+  "41": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "jitter, flickering, morphing limbs, distorted faces, sudden jump cut, static photo, low frame rate, blurry, cartoon, 3d render, anime, worst quality, low quality, oversaturated, motion blur artifact, jump cuts, deformed face"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "30",
+        0
+      ],
+      "frame_rate": 24,
+      "filename_prefix": "wan_i2v_out"
+    }
+  }
+}

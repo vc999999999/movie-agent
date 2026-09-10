@@ -1,0 +1,10 @@
+prompt_language: en
+max_prompt_chars: 1800
+motion_style: natural_sentence
+supports_negative_prompt: true
+quality_triggers: "masterpiece, ultra-detailed, cinematic film still, photorealistic 8k, photoreal texture, highly intricate"
+defaults:
+  steps: 25
+  cfg: 6.0
+default_negative_prompts:
+  - "blurry, low quality, worst quality, distorted anatomy, bad hands, extra digits, text, watermark, signature"

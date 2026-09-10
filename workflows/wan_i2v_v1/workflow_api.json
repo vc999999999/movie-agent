@@ -1,0 +1,50 @@
+{
+  "10": {
+    "class_type": "WanVideoModelLoader",
+    "inputs": {
+      "model_name": "Wan2.1-I2V-14B-720P.safetensors"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "first_frame.png"
+    }
+  },
+  "30": {
+    "class_type": "WanVideoSampler",
+    "inputs": {
+      "model": ["10", 0],
+      "image": ["20", 0],
+      "positive": ["40", 0],
+      "negative": ["41", 0],
+      "seed": 88888888,
+      "steps": 30,
+      "cfg": 6.0,
+      "length": 81,
+      "width": 1280,
+      "height": 720,
+      "fps": 24
+    }
+  },
+  "40": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "cinematic action"
+    }
+  },
+  "41": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "blurry, low quality"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["30", 0],
+      "frame_rate": 24,
+      "filename_prefix": "wan_i2v_out"
+    }
+  }
+}

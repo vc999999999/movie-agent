@@ -1,0 +1,14 @@
+{
+  "workflow_id": "cogvideox_t2v_v1",
+  "version": "1.0.0",
+  "name": "CogVideoX 文生视频工作流",
+  "generation_mode": "text_to_video",
+  "supported_aspect_ratios": ["16:9", "9:16", "2.39:1"],
+  "min_vram_gb": 12,
+  "max_frames": 81,
+  "required_models": ["CogVideoX-5b.safetensors"],
+  "required_nodes": ["CogVideoModelLoader", "CLIPTextEncode", "CogVideoSampler", "VHS_VideoCombine"],
+  "accepted_references": ["style"],
+  "patch_map_path": "workflows/cogvideox_t2v_v1/patch_map.json",
+  "workflow_path": "workflows/cogvideox_t2v_v1/workflow_api.json"
+}
