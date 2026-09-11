@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from app.continuity import continuity_checker
-from app.models import CharacterBible, LocationBible, ProjectBible, ShotSpec
+from agent.continuity import continuity_checker
+from agent.models import CharacterBible, LocationBible, ProjectBible, ShotSpec
 
 def test_continuity_id_verification():
     char = CharacterBible(

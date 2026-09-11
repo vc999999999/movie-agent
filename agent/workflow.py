@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Optional
 import yaml
 
-from app.config import settings
-from app.models import ErrorDetail, ShotPrompt, ShotSpec, WorkflowPlan, WorkflowProfile
+from server.config import settings
+from agent.models import ErrorDetail, ShotPrompt, ShotSpec, WorkflowPlan, WorkflowProfile
 
 logger = logging.getLogger(__name__)
 

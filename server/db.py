@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from app.config import settings
+from server.config import settings
 
 def get_db_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     path = db_path or settings.sqlite_db_path
@@ -168,7 +168,6 @@ class Database:
     # Artifacts
     def save_artifact(self, project_id: str, kind: str, content: dict[str, Any] | list[Any], status: str = "draft") -> int:
         with self._conn() as conn:
-            # find next version
             row = conn.execute("SELECT MAX(version) as max_v FROM artifacts WHERE project_id = ? AND kind = ?", (project_id, kind)).fetchone()
             next_v = (row["max_v"] or 0) + 1
             art_id = f"art_{kind}_{next_v}_{uuid.uuid4().hex[:6]}"

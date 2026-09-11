@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any, Optional
 import uuid
 
-from app.config import settings
-from app.continuity import continuity_checker
-from app.comfyui import comfyui_client
-from app.db import db
-from app.llm import llm_service
-from app.models import (
+from server.config import settings
+from agent.continuity import continuity_checker
+from agent.comfyui import comfyui_client
+from server.db import db
+from agent.llm import llm_service
+from agent.models import (
     CreativeBrief,
     ErrorDetail,
     ProjectBible,
@@ -27,13 +27,13 @@ from app.models import (
     ShotSpec,
     WorkflowPlan,
 )
-from app.prompt_compiler import prompt_compiler
-from app.questions import (
+from agent.prompt_compiler import prompt_compiler
+from agent.questions import (
     apply_safe_defaults,
     calculate_brief_completion,
     select_questions,
 )
-from app.workflow import workflow_registry
+from agent.workflow import workflow_registry
 
 logger = logging.getLogger(__name__)
 

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from app.models import CharacterBible, LocationBible, ProjectBible, ShotSpec
-from app.prompt_compiler import (
+from agent.models import CharacterBible, LocationBible, ProjectBible, ShotSpec
+from agent.prompt_compiler import (
     map_resolution,
     merge_negative_prompts,
     prompt_compiler,

@@ -6,9 +6,9 @@ import json
 import sys
 from typing import Optional
 
-from app.db import init_db
-from app.service import project_service
-from app.workflow import workflow_registry
+from server.db import init_db
+from agent.service import project_service
+from agent.workflow import workflow_registry
 
 async def run_cli():
     parser = argparse.ArgumentParser(description="Movie Agent CLI - AI Film Production Agent")

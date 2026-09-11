@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import pytest
-from app.service import project_service
+from agent.service import project_service
 
 @pytest.mark.asyncio
 async def test_case_1_30s_vertical_trailer():

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 from typing import Any, Optional
-from app.models import CharacterBible, LocationBible, ProjectBible, ShotPrompt, ShotSpec
+from agent.models import CharacterBible, LocationBible, ProjectBible, ShotPrompt, ShotSpec
 
 # Aspect ratio resolution mapping
 ASPECT_RATIO_RESOLUTIONS: dict[str, dict[str, tuple[int, int]]] = {

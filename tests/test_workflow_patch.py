@@ -3,8 +3,8 @@ from __future__ import annotations
 import copy
 import json
 import pytest
-from app.models import ShotPrompt, ShotSpec
-from app.workflow import workflow_registry
+from agent.models import ShotPrompt, ShotSpec
+from agent.workflow import workflow_registry
 
 def test_workflow_loading():
     assert "flux_character_sheet_v1" in workflow_registry.profiles

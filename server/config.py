@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     data_dir: Path = BASE_DIR / "projects"
     workflows_dir: Path = BASE_DIR / "workflows"
     prompts_dir: Path = BASE_DIR / "prompts"
-    static_dir: Path = BASE_DIR / "static"
+    web_dir: Path = BASE_DIR / "web"
     sqlite_db_path: Path = BASE_DIR / "projects" / "movie_agent.db"
 
     # Agent Limits

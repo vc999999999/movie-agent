@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from app.models import CreativeBrief, QuestionItem
+from agent.models import CreativeBrief, QuestionItem
 
 QUESTION_BANK: dict[str, dict[str, Any]] = {
     "duration_seconds": {

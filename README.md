@@ -10,8 +10,11 @@ pinned: false
 
 # 🎬 Movie Agent - AI 电影制作智能体
 
-> 严格遵循《电影Agent详细实现方案.md》真实落地的高水准全链路电影制作 Agent 系统。
-> 支持从用户一句创意、故事梗概或剧本片段出发，通过有限轮次（最多 3 轮、每轮最多 3 问）高影响度反问澄清需求，输出结构化剧本 (Screenplay)、人物与场景圣经 (ProjectBible)、可执行镜头表 (ShotSpec)、多层分层提示词包 (PromptPackage)，并确定性注入 ComfyUI 模板生成素材，最后通过 FFmpeg 自动合成粗剪短片。
+> 严格遵循《电影Agent详细实现方案.md》与现代化解耦架构落地的全链路电影制作 Agent 系统。
+> 采用 **三层彻底解耦设计**：
+> - **Agent 核心引擎 (`agent/`)**：纯净无框架依赖的 Headless Agent SDK，可作为通用 Python 包独立使用；
+> - **服务与存储层 (`server/`)**：负责 RESTful 路由、SQLite 审计持久化与 ModelScope/Docker 运行环境；
+> - **独立前端界面 (`web/`)**：现代化暗黑电影质感 UI，前后端独立演进。
 
 ---
 
@@ -39,128 +42,107 @@ pinned: false
 
 ---
 
-## 📁 真实落地的项目结构
+## 📁 解耦后的清晰项目结构
 
 ```text
 dy/
-├── app/
-│   ├── __init__.py            # 模块入口与版本
-│   ├── config.py              # 配置中心（Pydantic BaseSettings，加载环境变量/.env）
-│   ├── models.py              # 核心数据模型（CreativeBrief, ShotSpec, ProjectBible等，extra="forbid"）
-│   ├── db.py                  # SQLite3 持久化（projects, messages, artifacts, render_runs 等）
-│   ├── questions.py           # 反问引擎（优先级计算、问题库、3 轮终止规则、安全默认策略）
-│   ├── prompt_compiler.py     # 提示词编译器（8 层正向提示词组装、负向去重、画幅分辨率映射）
-│   ├── workflow.py            # 工作流注册中心（模板加载、能力匹配算法、PatchMap 确定性注入）
-│   ├── comfyui.py             # ComfyUI 客户端（/prompt, WebSocket 监听, /history, 产物下载与仿真）
-│   ├── continuity.py          # 视听连续性检查（ID 引用、光影跃迁、起始帧承接）
-│   ├── llm.py                 # 结构化 LLM 服务（支持 OpenAI/DeepSeek/Qwen + 自修复重试 + 离线仿真）
-│   ├── service.py             # 核心业务编排与状态机（状态转换、全流程管线、FFmpeg 粗剪）
-│   ├── api.py                 # FastAPI REST 路由（满足详细实现方案第 10 节全部端点）
-│   ├── main.py                # 服务入口与静态页面挂载
-│   └── cli.py                 # 命令行交互工具
-├── prompts/                   # 结构化 Prompt 模板
+├── agent/                    # 🧠 纯粹的 Agent 核心引擎 (Headless Agent SDK)
+│   ├── __init__.py           # 导出 MovieAgent, ProjectService, Data Models
+│   ├── models.py             # 核心领域数据模型 (Pydantic extra="forbid")
+│   ├── service.py            # Agent 主流程状态机与用例编排
+│   ├── questions.py          # 反问引擎 (优先级计算、3 轮终止、安全默认)
+│   ├── prompt_compiler.py    # 8 层 Prompt 确定性编译器
+│   ├── workflow.py           # 工作流注册中心、能力选择算法与 PatchMap 补丁引擎
+│   ├── comfyui.py            # ComfyUI API 客户端与离线高保真仿真引擎
+│   ├── continuity.py         # 视听连续性检查
+│   └── llm.py                # 结构化 LLM 调用与自修复重试
+│
+├── server/                   # 🌐 服务端与持久化层 (FastAPI Backend & Storage)
+│   ├── __init__.py
+│   ├── config.py             # 集中配置中心 (Pydantic BaseSettings)
+│   ├── db.py                 # SQLite 持久化与不可变版本控制
+│   ├── api.py                # RESTful API 路由 (依赖并调用 agent.*)
+│   ├── main.py               # FastAPI 服务入口、生命周期管理、静态资源挂载
+│   └── cli.py                # 终端命令行 CLI 工具
+│
+├── web/                      # 🎨 独立前端界面 (Decoupled Web Frontend)
+│   ├── index.html            # 4 步向导式界面 (创意反问/简报/分镜/粗剪)
+│   ├── styles.css            # 暗黑电影质感 UI 样式
+│   └── app.js                # 前端业务状态控制与 REST API 调用
+│
+├── prompts/                  # 结构化 Prompt 模板
 │   ├── extract_brief.md       # 调用 A：输入要素抽取
 │   ├── build_screenplay.md    # 调用 B：剧本拆解与人物场景圣经
 │   ├── build_shots.md         # 调用 C：分镜镜头拆解
 │   ├── compile_shot_prompt.md # 调用 D：语义提示词编译
 │   └── continuity_review.md   # 视听连续性审查
-├── workflows/                 # ComfyUI API 工作流模板集
+├── workflows/                # ComfyUI API 工作流模板集
 │   ├── flux_character_sheet_v1/ # Flux 角色与场景概念图工作流
 │   ├── wan_i2v_v1/              # Wan2.1 图生视频工作流
 │   └── cogvideox_t2v_v1/        # CogVideoX 文生视频工作流
-├── static/                    # 现代暗黑电影质感 Web UI 前端
-│   ├── index.html             # 四步式向导界面
-│   ├── styles.css             # 响应式极简暗色主题
-│   └── app.js                 # 完整前端交互与 API 联动
-├── tests/                     # 最小测试集与端到端测试
+├── tests/                    # 19 项全量自动化测试集
 │   ├── test_questions.py      # 反问引擎与优先级计算测试
 │   ├── test_prompt_compiler.py# 提示词分层与角色锁定测试
-│   ├── test_workflow_patch.py # PatchMap 注入与不变性测试
-│   ├── test_continuity.py     # 视听连续性检查测试
+│   ├── test_workflow_patch.py # PatchMap 注入与原始模板不变性测试
+│   ├── test_continuity.py     # 视听连续性校验测试
 │   ├── test_api.py            # FastAPI 端点生命周期集成测试
 │   └── test_end_to_end.py     # 3 个典型场景端到端真实生成与粗剪测试
+├── Dockerfile                # ModelScope Studio 容器构建规范 (端口 7860 + FFmpeg)
+├── app.py                    # 根目录统一启动入口
+├── requirements.txt          # 核心依赖清单
 ├── pytest.ini                 # 测试配置
-├── .env.example               # 环境变量配置模板
-└── README.md                  # 说明文档
+└── .env.example               # 环境变量配置模板
 ```
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 激活虚拟环境
-
-项目已配置好专用虚拟环境：
+### 1. 启动 Web 页面与 API 服务
 
 ```bash
-source .venv/bin/activate
+# 方式一：直接运行启动入口（默认端口 7860，兼容 ModelScope 创空间）
+python app.py
+
+# 方式二：通过 uvicorn 启动（可指定端口）
+python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 2. 配置环境变量（可选）
+在浏览器中打开：👉 **http://localhost:8000** 或 **http://localhost:7860**
 
-复制 `.env.example` 并填入模型 API Key（如果不填，系统内置的仿真生成器也将支持 100% 流程自测）：
+### 2. 作为独立 Headless Agent SDK 引入
 
-```bash
-cp .env.example .env
+在你的任何 Python 脚本或后台工作流中直接调用：
+
+```python
+from agent import MovieAgent, CreativeBrief
+
+agent = MovieAgent()
+
+# 1. 创建项目并分析输入
+project = agent.create_project("做一个赛博朋克雨夜追凶预告片")
+# 2. 确认简报并生成剧本与镜头
+agent.confirm_brief(project["id"])
+# 3. 确认分镜并自动编译注入 ComfyUI 工作流
+agent.confirm_shots(project["id"])
 ```
 
-```env
-OPENAI_API_KEY=sk-xxxx
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o
-
-# 若本地已启动 ComfyUI（默认端口 8188）
-COMFYUI_HOST=127.0.0.1
-COMFYUI_PORT=8188
-COMFYUI_MOCK_MODE=false
-```
-
-### 3. 启动 Web 页面与 API 服务
-
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-打开浏览器访问：
-👉 **http://localhost:8000**
-
-即可看到完整的 4 步制作界面：
-1. **创意与反问**：输入电影创意，实时交互答题，观察右侧要素解析度与 Agent 默认假设。
-2. **创作简报确认**：直接审阅和修改片长、画幅、对白模式、主角设定与核心危机。
-3. **剧本与分镜**：查看场景与角色固定外貌，检查每个镜头的机位运镜与起承转合，观察时长守恒仪表与连续性提醒。
-4. **生成包与粗剪**：查看每个镜头的 Patched Workflow JSON，点击单镜头渲染或一键批量渲染，最后使用 FFmpeg 一键合成粗剪短片并在网页中直接播放！
-
----
-
-## 💻 CLI 命令行使用
-
-除网页端外，系统提供了完整的 CLI 交互与批量执行工具：
+### 3. 命令行 CLI 交互
 
 ```bash
 # 查看所有已登记的 ComfyUI 工作流模板
-python -m app.cli workflows
+python -m server.cli workflows
 
-# 依据一句话创意全自动执行端到端生成（自动确认并编译工作流）
-python -m app.cli create --idea "做一个赛博朋克侦探在雨夜追凶的45秒预告片" --auto
+# 依据一句话创意全自动执行端到端生成
+python -m server.cli create --idea "做一个赛博朋克侦探在雨夜追凶的45秒预告片" --auto
 
 # 列出所有项目
-python -m app.cli list
-
-# 批量执行镜头生成
-python -m app.cli render --id prj_xxxxxxxx
-
-# 调用 FFmpeg 一键粗剪拼接 MP4
-python -m app.cli rough-cut --id prj_xxxxxxxx
+python -m server.cli list
 ```
 
----
-
-## 🧪 运行完整测试集
-
-包含反问引擎、Prompt 编译、PatchMap 注入、连续性质检、FastAPI 接口与端到端粗剪的 19 项全量自动化测试：
+### 4. 运行全量测试套件
 
 ```bash
 .venv/bin/pytest -v
 ```
-
-全部测试通过（19 passed）。
+19 项测试全部通过（19 passed）。

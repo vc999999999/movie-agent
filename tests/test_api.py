@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from starlette.testclient import TestClient
-from app.main import app
+from server.main import app
 
 client = TestClient(app)
 

@@ -7,11 +7,11 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.config import settings
-from app.db import db
-from app.models import CreativeBrief, QuestionsResponse, RenderRun, ShotSpec
-from app.service import project_service
-from app.workflow import workflow_registry
+from server.config import settings
+from server.db import db
+from agent.models import CreativeBrief, QuestionsResponse, RenderRun, ShotSpec
+from agent.service import project_service
+from agent.workflow import workflow_registry
 
 router = APIRouter(prefix="/api")
 

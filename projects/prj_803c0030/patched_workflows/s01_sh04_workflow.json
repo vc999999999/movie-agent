@@ -1,0 +1,65 @@
+{
+  "10": {
+    "class_type": "WanVideoModelLoader",
+    "inputs": {
+      "model_name": "Wan2.1-I2V-14B-720P.safetensors"
+    }
+  },
+  "20": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "first_frame.png"
+    }
+  },
+  "30": {
+    "class_type": "WanVideoSampler",
+    "inputs": {
+      "model": [
+        "10",
+        0
+      ],
+      "image": [
+        "20",
+        0
+      ],
+      "positive": [
+        "40",
+        0
+      ],
+      "negative": [
+        "41",
+        0
+      ],
+      "seed": 59717236,
+      "steps": 30,
+      "cfg": 6.0,
+      "length": 108,
+      "width": 720,
+      "height": 1280,
+      "fps": 24
+    }
+  },
+  "40": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "[Style]: 赛博朋克写实冷光. [Characters]: 侦探 (深邃坚毅的眼神，留着稀疏胡茬，黑发在雨水中被打湿贴在额头, wearing 穿着经典深灰防水风衣，立起衣领，内搭黑色高领毛衣与战术皮靴). [Environment]: Location: 雨夜窄巷与霓虹废墟, 潮湿反光的湿漉青石路面，两侧斑驳旧砖墙贴满破旧海报，头顶错落交织的电线与泛着幽蓝光芒的霓虹招牌在雨水中闪烁, time: 深夜暴雨, lighting: 雨水倒影中的冷调幽蓝与品红霓虹高光，局部阴影浓重, weather: 强暴雨，伴随升腾的地面水汽. [Setup]: Start frame: 巷道死胡同铁丝网前，背对镜头的神秘人骤然回身. [Subject Action]: Action: 主角举枪对准黑影，暴风雨达到顶点，一道惊雷划破夜空照亮对峙双方. [Camera]: Cinematography: shot size MCU, angle 极低仰角戏剧性视角, movement 快速推近定格, composition 对称双人对峙构图, lens: 35mm Anamorphic Prime. [Lighting & Mood]: Lighting: 闪电瞬间超强冷白过曝硬光转全黑, mood: 震撼悬疑. [Rendering]: cinematic film lighting, photorealistic, 4k resolution, fluid natural movement, high dynamic range"
+    }
+  },
+  "41": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "jitter, flickering, morphing limbs, distorted faces, sudden jump cut, static photo, low frame rate, blurry, cartoon, 3d render, anime, worst quality, low quality, oversaturated, motion blur artifact, jump cuts, deformed face"
+    }
+  },
+  "50": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": [
+        "30",
+        0
+      ],
+      "frame_rate": 24,
+      "filename_prefix": "wan_i2v_out"
+    }
+  }
+}

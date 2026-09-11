@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-from app.models import ContinuityIssue, ProjectBible, ShotSpec
+from agent.models import ContinuityIssue, ProjectBible, ShotSpec
 
 class ContinuityChecker:
     """14. Continuity engine: deterministic checks + LLM continuity review."""

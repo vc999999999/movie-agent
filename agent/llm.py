@@ -8,8 +8,8 @@ from typing import Any, Optional, Type, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from app.config import settings
-from app.models import (
+from server.config import settings
+from agent.models import (
     BriefExtraction,
     CharacterBible,
     ContinuityIssue,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from app.questions import (
+from agent.questions import (
     apply_safe_defaults,
     calculate_brief_completion,
     calculate_priority,

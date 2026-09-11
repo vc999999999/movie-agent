@@ -11,8 +11,8 @@ from typing import Any, Callable, Optional
 import uuid
 
 import httpx
-from app.config import settings
-from app.models import ErrorDetail
+from server.config import settings
+from agent.models import ErrorDetail
 
 logger = logging.getLogger(__name__)
 
