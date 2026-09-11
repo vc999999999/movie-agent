@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from agent.questions import (
     apply_safe_defaults,
     calculate_brief_completion,

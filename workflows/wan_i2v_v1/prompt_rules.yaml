@@ -1,7 +1,4 @@
 prompt_language: en
-max_prompt_chars: 1800
-motion_style: natural_sentence
-supports_negative_prompt: true
 quality_triggers: "cinematic film lighting, photorealistic, 4k resolution, fluid natural movement, high dynamic range"
 defaults:
   steps: 30

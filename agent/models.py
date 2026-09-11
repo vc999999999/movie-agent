@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ProjectStatus = Literal[
     "collecting",          # 正在理解输入/反问
     "brief_review",        # 等待用户确认创作简报
+    "treatment_review",    # 等待用户选择导演方案
     "screenplay_ready",    # 剧本拆解完成
     "shots_review",        # 等待用户确认镜头表
     "package_ready",       # Prompt 和工作流参数包完成
@@ -110,6 +111,18 @@ class ShotSpec(StrictBaseModel):
     shot_id: str
     scene_id: str
     order: int
+    beat_id: Optional[str] = None
+    grammar_pack_id: Optional[str] = None
+    sequence_pattern: Optional[str] = None
+    shot_function: Optional[str] = None
+    information_revealed: Optional[str] = None
+    information_withheld: Optional[str] = None
+    screen_direction: Optional[Literal["left_to_right", "right_to_left", "neutral"]] = None
+    axis_id: Optional[str] = None
+    auteur_profile_id: Optional[str] = None
+    auteur_variant_id: Optional[str] = None
+    technique_ids: list[str] = Field(default_factory=list)
+    technique_rationale: Optional[str] = None
     duration_seconds: float = Field(ge=1.0, le=12.0)
     narrative_purpose: str
     subject_ids: list[str]
@@ -141,8 +154,6 @@ class ShotPrompt(StrictBaseModel):
     prompt_language: Literal["en", "zh"] = "en"
     positive_prompt: str
     negative_prompt: str
-    image_prompt: Optional[str] = None
-    video_prompt: str
     reference_asset_ids: list[str] = Field(default_factory=list)
     seed: int
     steps: Optional[int] = None
@@ -152,7 +163,6 @@ class ShotPrompt(StrictBaseModel):
     frame_count: int
     fps: int = 24
     workflow_id: Optional[str] = None
-    unsupported_requirements: list[str] = Field(default_factory=list)
 
 # 5.7 WorkflowProfile
 class WorkflowProfile(StrictBaseModel):
@@ -166,8 +176,101 @@ class WorkflowProfile(StrictBaseModel):
     required_models: list[str]
     required_nodes: list[str]
     accepted_references: list[Literal["character", "style", "first_frame", "last_frame"]]
-    patch_map_path: str
-    workflow_path: str
+
+class NarrativeBeat(StrictBaseModel):
+    role: str
+    ratio: float = Field(gt=0, le=1)
+    purpose: str
+
+class NarrativePattern(StrictBaseModel):
+    pattern_id: str
+    duration_range: tuple[int, int]
+    beats: list[NarrativeBeat]
+
+class DirectingGrammar(StrictBaseModel):
+    grammar_id: str
+    intent: str
+    preferred_sizes: list[Literal["ECU", "CU", "MCU", "MS", "MLS", "WS", "EWS"]]
+    preferred_movements: list[str]
+    max_same_size_run: int = Field(default=2, ge=1, le=5)
+    sequence_patterns: dict[str, list[str]]
+    forbidden_patterns: list[str] = Field(default_factory=list)
+
+class GenerationRecipe(StrictBaseModel):
+    workflow_id: str
+    generation_mode: Literal["text_to_image", "image_to_video", "text_to_video"]
+    max_duration_seconds: float = Field(gt=0, le=12)
+    unsupported: list[str] = Field(default_factory=list)
+
+class FilmProductionPack(StrictBaseModel):
+    pack_id: str
+    version: str
+    name: str
+    genres: list[str]
+    keywords: list[str]
+    narrative_pattern: NarrativePattern
+    directing_grammar: DirectingGrammar
+    generation_recipe: GenerationRecipe
+
+class AuteurTechnique(StrictBaseModel):
+    technique_id: str
+    name: str
+    domain: Literal["narrative", "camera", "editing", "sound"]
+    instruction: str
+    viewer_effect: str
+    generation_note: str
+
+class AuteurVariant(StrictBaseModel):
+    variant_id: str
+    name: str
+    reference_works: list[str]
+    best_for: list[str]
+    techniques: list[AuteurTechnique]
+
+class AuteurProfile(StrictBaseModel):
+    profile_id: str
+    version: str
+    director_name: str
+    label: str
+    description: str
+    disclaimer: str
+    default_variant_id: str
+    variants: list[AuteurVariant]
+
+class AuteurSelection(StrictBaseModel):
+    profile_id: str
+    variant_id: str
+    intensity: Literal["subtle", "balanced", "strong"] = "balanced"
+    preserve: list[str] = Field(default_factory=list)
+
+class AuteurContext(StrictBaseModel):
+    profile: AuteurProfile
+    selection: AuteurSelection
+
+class TreatmentOption(StrictBaseModel):
+    treatment_id: str
+    name: str
+    core_question: str
+    logline: str
+    structure: str
+    visual_strategy: str
+    production_pack_id: str
+    production_risk: Literal["low", "medium", "high"]
+    estimated_shots: int = Field(ge=3, le=30)
+    technique_plan: list[str] = Field(default_factory=list)
+    viewer_effect: str = ""
+
+class TreatmentPackage(StrictBaseModel):
+    options: list[TreatmentOption] = Field(min_length=2, max_length=3)
+    recommendation: str
+    recommendation_reason: str
+
+class GrammarIssue(StrictBaseModel):
+    severity: Literal["warning", "error"]
+    code: str
+    shot_ids: list[str]
+    message: str
+    suggested_fix: str
 
 # 14.2 ContinuityIssue
 class ContinuityIssue(StrictBaseModel):
@@ -180,7 +283,6 @@ class ContinuityIssue(StrictBaseModel):
 # 6. Extraction & Questions
 class BriefExtraction(StrictBaseModel):
     known: dict[str, Any] = Field(default_factory=dict)
-    unknown: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
     confidence: dict[str, float] = Field(default_factory=dict)
     assumptions: list[str] = Field(default_factory=list)

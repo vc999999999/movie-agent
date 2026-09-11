@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from agent.continuity import continuity_checker
 from agent.models import CharacterBible, LocationBible, ProjectBible, ShotSpec
 

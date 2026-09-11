@@ -1,0 +1,100 @@
+profile_id: christopher_nolan_technique_study
+version: 1.0.0
+director_name: 克里斯托弗·诺兰
+label: 时间、信息与现实层级
+description: 将场景问题转化为时间结构、主观信息和空间行动之间的冲突。
+disclaimer: 这是对公开作品中电影技法的研究性归纳，不代表导演本人、官方授权或对具体作品的复制。
+default_variant_id: parallel_time_pressure
+variants:
+  - variant_id: nonlinear_identity
+    name: 非线性身份谜题
+    reference_works: [记忆碎片, 致命魔术]
+    best_for: [身份悬疑, 不可靠记忆, 真相反转]
+    techniques:
+      - technique_id: consequence_before_cause
+        name: 结果先于原因
+        domain: narrative
+        instruction: 先展示事件后果，再用后续段落补全原因。
+        viewer_effect: 观众主动重建因果关系。
+        generation_note: 将不同时段拆成独立镜头生成，依靠剪辑关联。
+      - technique_id: subjective_evidence
+        name: 主观证据
+        domain: camera
+        instruction: 只展示主角可见且可能被误读的证据。
+        viewer_effect: 让观众与主角共享错误判断。
+        generation_note: 每个镜头只承载一个清晰证据物。
+      - technique_id: reinterpretation_cut
+        name: 重释剪辑
+        domain: editing
+        instruction: 重复一个画面，但新增信息改变它的含义。
+        viewer_effect: 在不新增大场面的情况下形成反转。
+        generation_note: 复用同一构图和角色参考，改变一个关键细节。
+  - variant_id: layered_reality
+    name: 多层现实与规则任务
+    reference_works: [盗梦空间, 信条]
+    best_for: [高概念科幻, 多层空间, 规则驱动行动]
+    techniques:
+      - technique_id: rule_dramatization
+        name: 用行动展示规则
+        domain: narrative
+        instruction: 让人物通过失败、限制或对抗展示世界规则，避免独立说明段落。
+        viewer_effect: 设定与戏剧冲突同时发生。
+        generation_note: 把复杂规则拆成一个可观察动作和一个反应镜头。
+      - technique_id: nested_space_match
+        name: 层级空间匹配
+        domain: editing
+        instruction: 用相似动作或构图在不同现实层级间切换。
+        viewer_effect: 保持多层叙事可读性。
+        generation_note: 各层使用稳定且不同的色彩或光线标识。
+      - technique_id: practical_scale_anchor
+        name: 实体尺度锚点
+        domain: camera
+        instruction: 先用可识别人物或物体建立尺度，再展示异常空间。
+        viewer_effect: 让奇观保持真实重量感。
+        generation_note: 优先稳定广角和单一空间变化，避免连续复杂变形。
+  - variant_id: parallel_time_pressure
+    name: 平行时间压力
+    reference_works: [敦刻尔克, 奥本海默]
+    best_for: [倒计时, 营救, 多线汇合, 历史压力]
+    techniques:
+      - technique_id: unequal_timeline_crosscut
+        name: 不等速时间线交叉
+        domain: editing
+        instruction: 将不同时间尺度的行动按共同压力点交叉组织。
+        viewer_effect: 多条线索产生同一个逼近中的高潮。
+        generation_note: 每条时间线单独生成，以地点、服装和光线作硬区分。
+      - technique_id: deadline_escalation
+        name: 可感知倒计时
+        domain: narrative
+        instruction: 用不断减少的资源、距离或时间推进冲突。
+        viewer_effect: 即使对白很少也能持续提高紧张感。
+        generation_note: 使用可视觉确认的状态变化，不依赖生成准确文字。
+      - technique_id: pressure_sound_bridge
+        name: 压力声音桥
+        domain: sound
+        instruction: 用持续脉冲或前一场声音提前进入下一条时间线。
+        viewer_effect: 在切换空间时保持紧张连续。
+        generation_note: 声音在剪辑阶段添加，不写入视频生成动作。
+  - variant_id: cosmic_intimacy
+    name: 宏大尺度中的私人情感
+    reference_works: [星际穿越]
+    best_for: [亲情, 分离, 时间流逝, 宏大科幻]
+    techniques:
+      - technique_id: intimate_scale_contrast
+        name: 私人情感与宏大尺度对照
+        domain: camera
+        instruction: 在人物细微反应与巨大环境之间交替切换。
+        viewer_effect: 用尺度反差放大情感代价。
+        generation_note: 人物特写和环境大全景分开生成。
+      - technique_id: time_cost_object
+        name: 时间代价物证
+        domain: narrative
+        instruction: 用一个不断变化的物件或人物状态表现时间损失。
+        viewer_effect: 把抽象时间转化为可感知代价。
+        generation_note: 固定主体构图，仅改变明确可控的状态。
+      - technique_id: silence_after_spectacle
+        name: 奇观后的静默
+        domain: sound
+        instruction: 在视觉高潮后切入短暂静默和人物反应。
+        viewer_effect: 给观众留下情绪落点。
+        generation_note: 静默由时间线音频规划实现。

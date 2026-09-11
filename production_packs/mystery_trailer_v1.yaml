@@ -1,0 +1,29 @@
+pack_id: mystery_trailer_v1
+version: 1.0.0
+name: 新黑色悬疑预告
+genres: [悬疑, 惊悚, 犯罪, 科幻]
+keywords: [谜团, 侦探, 秘密, 真相, 追凶, 反转]
+narrative_pattern:
+  pattern_id: mystery_trailer_35_60
+  duration_range: [35, 60]
+  beats:
+    - {role: hook, ratio: 0.12, purpose: 用异常画面或声音立即制造问题}
+    - {role: setup, ratio: 0.18, purpose: 建立人物目标和受限空间}
+    - {role: escalation, ratio: 0.38, purpose: 用线索和阻碍升级危机}
+    - {role: rupture, ratio: 0.20, purpose: 以威胁或反转打破预期}
+    - {role: sting, ratio: 0.12, purpose: 保留最后一个未解信息}
+directing_grammar:
+  grammar_id: neo_noir_suspense
+  intent: 通过信息遮蔽、空间压迫和延迟揭示制造不安
+  preferred_sizes: [WS, MCU, CU, ECU]
+  preferred_movements: [固定镜头, 缓慢推近, 平移跟拍]
+  max_same_size_run: 2
+  sequence_patterns:
+    reveal: [establish_obscured_space, insert_clue, reaction_hold, delayed_source_reveal]
+    confrontation: [spatial_master, asymmetric_closeup, withheld_reverse, detail_of_threat]
+  forbidden_patterns: [无目的环绕运镜, 随机景别变化, 无叙事目的叠化]
+generation_recipe:
+  workflow_id: wan_i2v_v1
+  generation_mode: image_to_video
+  max_duration_seconds: 5
+  unsupported: [precise_lip_sync, two_complex_actions, last_frame_lock]

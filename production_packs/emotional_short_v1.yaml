@@ -1,0 +1,29 @@
+pack_id: emotional_short_v1
+version: 1.0.0
+name: 克制情感短片
+genres: [爱情, 成长, 家庭, 剧情]
+keywords: [告别, 重逢, 亲情, 爱情, 回忆, 成长]
+narrative_pattern:
+  pattern_id: emotional_short_20_90
+  duration_range: [20, 90]
+  beats:
+    - {role: emotional_hook, ratio: 0.15, purpose: 先呈现一个可感知的关系裂缝}
+    - {role: ordinary_detail, ratio: 0.25, purpose: 用生活细节建立人物关系}
+    - {role: recognition, ratio: 0.30, purpose: 让人物通过动作意识到真实情感}
+    - {role: choice, ratio: 0.20, purpose: 用一个克制选择完成情绪转折}
+    - {role: aftertaste, ratio: 0.10, purpose: 留下安静但清晰的余韵}
+directing_grammar:
+  grammar_id: restrained_emotion
+  intent: 通过停顿、反应和日常细节，让情绪由观众自行发现
+  preferred_sizes: [WS, MS, CU, ECU]
+  preferred_movements: [固定镜头, 缓慢推近, 缓慢横移]
+  max_same_size_run: 2
+  sequence_patterns:
+    relationship: [shared_space, meaningful_detail, withheld_reaction, eye_contact]
+    farewell: [two_shot_distance, gesture_insert, reaction_hold, empty_frame]
+  forbidden_patterns: [每句台词都切镜头, 滥用慢动作, 无动机情绪特写]
+generation_recipe:
+  workflow_id: wan_i2v_v1
+  generation_mode: image_to_video
+  max_duration_seconds: 5
+  unsupported: [precise_lip_sync, crowded_blocking, subtle_finger_interaction]

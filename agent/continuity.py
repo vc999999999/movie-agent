@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, Optional
 from agent.models import ContinuityIssue, ProjectBible, ShotSpec
 
 class ContinuityChecker:

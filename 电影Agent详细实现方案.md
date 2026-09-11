@@ -667,8 +667,7 @@ movie-agent/
 ├── prompts/
 │   ├── extract_brief.md
 │   ├── build_screenplay.md
-│   ├── build_shots.md
-│   └── compile_shot_prompt.md
+│   └── build_shots.md
 ├── workflows/
 ├── tests/
 │   ├── test_questions.py

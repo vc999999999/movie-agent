@@ -2,9 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
-import sys
-from typing import Optional
 
 from server.db import init_db
 from agent.service import project_service

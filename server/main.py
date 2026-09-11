@@ -1,62 +1,49 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from pathlib import Path
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.types import Scope
 
 from server.api import router
 from server.config import settings
-from server.db import init_db
-from agent.workflow import workflow_registry
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    settings.workflows_dir.mkdir(parents=True, exist_ok=True)
-    settings.prompts_dir.mkdir(parents=True, exist_ok=True)
-    settings.web_dir.mkdir(parents=True, exist_ok=True)
-    init_db()
-    workflow_registry.load_all()
-    yield
+
+class ImmutableStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 app = FastAPI(
     title="Movie Agent - AI Film Production System",
     description="从一句话创意到分镜表与 ComfyUI 工作流参数包的电影 Agent 系统",
     version="0.2.0",
-    lifespan=lifespan,
-)
-
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
 )
 
 # Include API routes
 app.include_router(router)
 
-# Mount outputs/media directory
-settings.data_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/media", StaticFiles(directory=str(settings.data_dir)), name="media")
-
-# Mount web frontend files
+# Static frontend: prefer the Vite build output, fall back to web/ root
 settings.web_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/web", StaticFiles(directory=str(settings.web_dir)), name="web")
-app.mount("/static", StaticFiles(directory=str(settings.web_dir)), name="static")
+dist_dir = settings.web_dir / "dist"
+static_root = dist_dir if dist_dir.is_dir() else settings.web_dir
+
+assets_dir = static_root / "assets"
+if assets_dir.is_dir():
+    app.mount("/assets", ImmutableStaticFiles(directory=str(assets_dir)), name="assets")
+
+if not dist_dir.is_dir():
+    legacy_dir = settings.web_dir / "legacy"
+    if legacy_dir.is_dir():
+        app.mount("/static/legacy", StaticFiles(directory=str(legacy_dir)), name="legacy")
+
 
 @app.get("/")
+@app.get("/studio")
 async def root():
-    index_file = settings.web_dir / "index.html"
+    index_file = static_root / "index.html"
     if index_file.exists():
-        return FileResponse(index_file)
+        return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
     return {"message": "Movie Agent API is running. Please access /docs for API documentation."}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)

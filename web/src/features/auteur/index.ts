@@ -1,0 +1,1 @@
+export { AuteurStage } from "./AuteurStage";

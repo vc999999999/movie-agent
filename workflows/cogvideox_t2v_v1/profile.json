@@ -8,7 +8,5 @@
   "max_frames": 81,
   "required_models": ["CogVideoX-5b.safetensors"],
   "required_nodes": ["CogVideoModelLoader", "CLIPTextEncode", "CogVideoSampler", "VHS_VideoCombine"],
-  "accepted_references": ["style"],
-  "patch_map_path": "workflows/cogvideox_t2v_v1/patch_map.json",
-  "workflow_path": "workflows/cogvideox_t2v_v1/workflow_api.json"
+  "accepted_references": ["style"]
 }

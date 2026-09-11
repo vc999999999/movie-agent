@@ -8,7 +8,5 @@
   "max_frames": 1,
   "required_models": ["flux1-dev.safetensors"],
   "required_nodes": ["KSampler", "CheckpointLoaderSimple", "EmptyLatentImage", "CLIPTextEncode", "VAEDecode", "SaveImage"],
-  "accepted_references": ["character", "style"],
-  "patch_map_path": "workflows/flux_character_sheet_v1/patch_map.json",
-  "workflow_path": "workflows/flux_character_sheet_v1/workflow_api.json"
+  "accepted_references": ["character", "style"]
 }

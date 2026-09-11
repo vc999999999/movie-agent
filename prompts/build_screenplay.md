@@ -8,6 +8,8 @@
 3. 角色与场景固定化：为每个角色定义固定的 fixed_appearance（外貌特征）与 fixed_costume（服装），为场景定义 fixed_visual_description。这些描述将在后续所有相关镜头中复用，杜绝漂移。
 4. 视听化呈现：把心理活动、抽象概念转化为可被摄影机观察的实际动作、表情、台词或环境音效。
 5. 必须遵守用户的 user_must_keep 与 content_constraints。
+6. 如果输入包含 Confirmed Treatment，必须采用其 core_question、structure 与 visual_strategy，不得混合其他候选方案。
+7. 如果输入包含 Selected Auteur Technique Context，把具体技法落实为场景顺序、动作和声音设计；保留 preserve 内容，不得复制参考作品的人物、对白或标志性场面。
 
 ## 输出格式：
 必须返回合规 JSON，包含 project_bible 和 scenes。

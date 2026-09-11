@@ -16,6 +16,13 @@ def test_api_workflows_list():
     assert "wan_i2v_v1" in ids
     assert "cogvideox_t2v_v1" in ids
 
+def test_api_auteur_profiles_list():
+    res = client.get("/api/auteur-profiles")
+    assert res.status_code == 200
+    profile = next(item for item in res.json() if item["profile_id"] == "christopher_nolan_technique_study")
+    assert profile["default_variant_id"] == "parallel_time_pressure"
+    assert len(profile["variants"]) == 4
+
 def test_api_project_lifecycle():
     # 1. Create project
     create_res = client.post("/api/projects", json={
@@ -86,3 +93,13 @@ def test_api_project_lifecycle():
     assert render_res.status_code == 200
     render_run = render_res.json()
     assert render_run["status"] in ["success", "running"]
+
+    # Editing a confirmed shot invalidates stale prompts/workflows.
+    update_res = client.patch(
+        f"/api/projects/{project_id}/shots/{first_shot_id}",
+        json={"updates": {"action": "侦探停下并重新观察巷口"}},
+    )
+    assert update_res.status_code == 200
+    invalidated = client.get(f"/api/projects/{project_id}/packages").json()
+    assert invalidated["prompt_packages"] == []
+    assert client.get(f"/api/projects/{project_id}/workflow/{first_shot_id}").status_code == 404

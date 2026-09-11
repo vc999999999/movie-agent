@@ -5,7 +5,7 @@
 ## 严格规则：
 1. 绝对不要直接编写剧本或生成镜头。
 2. 忠实提取用户的明确意图，保留用户强调的设定（user_must_keep）。
-3. 区分已知事实（known）、未明确项（unknown）、冲突约束（conflicts）。
+3. 区分已知事实（known）和冲突约束（conflicts）；未出现的字段不要写入 known。
 4. 对每个已知字段评估置信度（0.0 ~ 1.0）。
 5. 用户若提及“你来定”、“都可以”等，记录为 agent_assumptions，不要将其视为冲突。
 
@@ -25,7 +25,6 @@
     "ending": "预告片式悬念",
     "dialogue_mode": "voiceover"
   },
-  "unknown": ["ending", "platform"],
   "conflicts": [],
   "confidence": {
     "logline": 1.0,

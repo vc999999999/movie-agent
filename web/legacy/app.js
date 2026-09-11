@@ -1,11 +1,23 @@
 let currentProjectId = null;
-let currentStep = 1;
 let selectedAnswers = {};
 let currentBrief = null;
-let currentShots = [];
+
+async function apiJson(url, options = {}) {
+  const response = await fetch(url, options);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || data.message || `请求失败 (${response.status})`);
+  }
+  return data;
+}
+
+function escapeHtml(value) {
+  const node = document.createElement("div");
+  node.textContent = String(value ?? "");
+  return node.innerHTML;
+}
 
 function switchStep(step) {
-  currentStep = step;
   for (let i = 1; i <= 4; i++) {
     const sec = document.getElementById(`step-${i}`);
     const btn = document.getElementById(`step-btn-${i}`);
@@ -29,12 +41,11 @@ async function handleStartProject() {
   btn.innerText = "⏳ 正在分析要素与规划...";
 
   try {
-    const res = await fetch("/api/projects", {
+    const data = await apiJson("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source_text: text })
     });
-    const data = await res.json();
     currentProjectId = data.project.id;
     document.getElementById("current-project-badge").innerText = `项目: ${currentProjectId}`;
 
@@ -154,12 +165,11 @@ async function handleSubmitAnswers() {
   btn.innerText = "⏳ 提交并再推断...";
 
   try {
-    const res = await fetch(`/api/projects/${currentProjectId}/answers`, {
+    const data = await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}/answers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ answers: answersArray })
     });
-    const data = await res.json();
 
     // Append to chat
     appendChatMessage("user", answersArray.map(a => `${a.field}: ${a.answer}`).join(" | "));
@@ -168,8 +178,7 @@ async function handleSubmitAnswers() {
 
     if (data.status === "brief_review" || data.can_confirm) {
       // Fetch latest brief
-      const pRes = await fetch(`/api/projects/${currentProjectId}`);
-      const pData = await pRes.json();
+      const pData = await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}`);
       currentBrief = pData.project.brief;
       populateBrief(currentBrief);
       switchStep(2);
@@ -186,8 +195,7 @@ async function handleSubmitAnswers() {
 
 async function handleSkipQuestions() {
   if (!currentProjectId) return;
-  const pRes = await fetch(`/api/projects/${currentProjectId}`);
-  const pData = await pRes.json();
+  const pData = await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}`);
   currentBrief = pData.project.brief;
   populateBrief(currentBrief);
   switchStep(2);
@@ -224,12 +232,11 @@ async function handleConfirmBrief() {
   };
 
   try {
-    const res = await fetch(`/api/projects/${currentProjectId}/brief/confirm`, {
+    await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}/brief/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(briefUpdates)
     });
-    const data = await res.json();
     alert("✅ 创作简报已确认！已为您生成剧本设定与分镜镜头表。");
     await loadScreenplayAndShots(currentProjectId);
     switchStep(3);
@@ -240,15 +247,13 @@ async function handleConfirmBrief() {
 
 async function loadScreenplayAndShots(projectId) {
   // Load Screenplay
-  const spRes = await fetch(`/api/projects/${projectId}/screenplay`);
-  const spData = await spRes.json();
+  const encodedProjectId = encodeURIComponent(projectId);
+  const spData = await apiJson(`/api/projects/${encodedProjectId}/screenplay`);
   renderProjectBible(spData.project_bible);
   renderScenes(spData.scenes);
 
   // Load Shots
-  const shRes = await fetch(`/api/projects/${projectId}/shots`);
-  const shData = await shRes.json();
-  currentShots = shData.shots;
+  const shData = await apiJson(`/api/projects/${encodedProjectId}/shots`);
   renderShots(shData.shots);
   renderContinuityAlerts(shData.continuity_issues);
 
@@ -263,7 +268,7 @@ function renderProjectBible(bible) {
     const p = document.createElement("div");
     p.style.fontSize = "0.85rem";
     p.style.marginTop = "0.4rem";
-    p.innerHTML = `<span style="color: #60a5fa;">${c.name}</span>: ${c.fixed_appearance}<br><span style="color: var(--text-muted); font-size: 0.8rem;">固定着装: ${c.fixed_costume}</span>`;
+    p.innerHTML = `<span style="color: #60a5fa;">${escapeHtml(c.name)}</span>: ${escapeHtml(c.fixed_appearance)}<br><span style="color: var(--text-muted); font-size: 0.8rem;">固定着装: ${escapeHtml(c.fixed_costume)}</span>`;
     charBox.appendChild(p);
   });
 
@@ -273,7 +278,7 @@ function renderProjectBible(bible) {
     const p = document.createElement("div");
     p.style.fontSize = "0.85rem";
     p.style.marginTop = "0.4rem";
-    p.innerHTML = `<span style="color: #60a5fa;">${l.name}</span> (${l.time_of_day})<br><span style="color: var(--text-muted); font-size: 0.8rem;">${l.fixed_visual_description}</span>`;
+    p.innerHTML = `<span style="color: #60a5fa;">${escapeHtml(l.name)}</span> (${escapeHtml(l.time_of_day)})<br><span style="color: var(--text-muted); font-size: 0.8rem;">${escapeHtml(l.fixed_visual_description)}</span>`;
     locBox.appendChild(p);
   });
 }
@@ -288,7 +293,7 @@ function renderScenes(scenes) {
     div.style.borderRadius = "6px";
     div.style.marginBottom = "0.5rem";
     div.style.fontSize = "0.85rem";
-    div.innerHTML = `<strong>${s.heading}</strong><p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">${s.setup}</p>`;
+    div.innerHTML = `<strong>${escapeHtml(s.heading)}</strong><p style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.2rem;">${escapeHtml(s.setup)}</p>`;
     box.appendChild(div);
   });
 }
@@ -297,28 +302,28 @@ function renderShots(shots) {
   const container = document.getElementById("shots-container");
   container.innerHTML = "";
 
-  shots.forEach((s, idx) => {
+  shots.forEach(s => {
     const card = document.createElement("div");
     card.className = "shot-card";
 
     card.innerHTML = `
       <div class="shot-header">
         <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span class="shot-id-badge">${s.shot_id}</span>
-          <span class="tag tag-accent">${s.duration_seconds} 秒</span>
-          <span class="tag">${s.shot_size}</span>
-          <span class="tag">${s.camera_movement}</span>
+          <span class="shot-id-badge">${escapeHtml(s.shot_id)}</span>
+          <span class="tag tag-accent">${escapeHtml(s.duration_seconds)} 秒</span>
+          <span class="tag">${escapeHtml(s.shot_size)}</span>
+          <span class="tag">${escapeHtml(s.camera_movement)}</span>
         </div>
-        <span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399;">${s.generation_mode}</span>
+        <span class="tag" style="background: rgba(16, 185, 129, 0.2); color: #34d399;">${escapeHtml(s.generation_mode)}</span>
       </div>
       <div style="font-size: 0.9rem; line-height: 1.5;">
-        <div><strong style="color: #94a3b8;">起幅 (Start):</strong> ${s.start_frame}</div>
-        <div style="margin-top: 0.3rem;"><strong style="color: #38bdf8;">核心动作 (Action):</strong> ${s.action}</div>
-        <div style="margin-top: 0.3rem;"><strong style="color: #94a3b8;">落幅 (End):</strong> ${s.end_frame}</div>
+        <div><strong style="color: #94a3b8;">起幅 (Start):</strong> ${escapeHtml(s.start_frame)}</div>
+        <div style="margin-top: 0.3rem;"><strong style="color: #38bdf8;">核心动作 (Action):</strong> ${escapeHtml(s.action)}</div>
+        <div style="margin-top: 0.3rem;"><strong style="color: #94a3b8;">落幅 (End):</strong> ${escapeHtml(s.end_frame)}</div>
       </div>
       <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: var(--text-muted); border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
-        <span>光影: ${s.lighting} | 情绪: ${s.mood}</span>
-        <span>镜头设计: ${s.lens || "35mm Prime"}</span>
+        <span>光影: ${escapeHtml(s.lighting)} | 情绪: ${escapeHtml(s.mood)}</span>
+        <span>镜头设计: ${escapeHtml(s.lens || "35mm Prime")}</span>
       </div>
     `;
     container.appendChild(card);
@@ -347,11 +352,10 @@ async function handleConfirmShots() {
   if (!currentProjectId) return;
 
   try {
-    const res = await fetch(`/api/projects/${currentProjectId}/shots/confirm`, {
+    await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}/shots/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" }
     });
-    const data = await res.json();
     alert("✅ 镜头表已确认！正在编译 PromptPackage 与 PatchMap 注入工作流...");
     await loadPackages(currentProjectId);
     switchStep(4);
@@ -361,8 +365,8 @@ async function handleConfirmShots() {
 }
 
 async function loadPackages(projectId) {
-  const res = await fetch(`/api/projects/${projectId}/packages`);
-  const data = await res.json();
+  const encodedProjectId = encodeURIComponent(projectId);
+  const data = await apiJson(`/api/projects/${encodedProjectId}/packages`);
 
   const container = document.getElementById("packages-container");
   container.innerHTML = "";
@@ -376,70 +380,79 @@ async function loadPackages(projectId) {
     card.className = "package-card";
 
     const isMatched = plan.status === "matched";
+    const previewId = `preview-box-${idx}`;
 
     card.innerHTML = `
       <div class="package-info">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <strong style="color: #38bdf8; font-size: 1.1rem;">${p.shot_id}</strong>
+            <strong style="color: #38bdf8; font-size: 1.1rem;">${escapeHtml(p.shot_id)}</strong>
             <span class="status-badge ${isMatched ? "badge-success" : "badge-error"}">
-              ${isMatched ? `适配工作流: ${plan.workflow_id}` : `未适配: ${plan.reason}`}
+              ${isMatched ? `适配工作流: ${escapeHtml(plan.workflow_id)}` : `未适配: ${escapeHtml(plan.reason)}`}
             </span>
           </div>
-          <a href="/api/projects/${projectId}/workflow/${p.shot_id}" download class="btn btn-sm" ${!isMatched ? "disabled" : ""}>
+          <a href="/api/projects/${encodedProjectId}/workflow/${encodeURIComponent(p.shot_id)}" download class="btn btn-sm" ${!isMatched ? "disabled" : ""}>
             💾 下载 Patched Workflow JSON
           </a>
         </div>
         <div style="margin-top: 0.5rem;">
           <label style="font-size: 0.75rem; color: var(--text-muted);">正向提示词 (Positive Prompt - 分层编译):</label>
-          <div class="prompt-display">${p.positive_prompt}</div>
+          <div class="prompt-display">${escapeHtml(p.positive_prompt)}</div>
         </div>
         <div style="margin-top: 0.3rem;">
           <label style="font-size: 0.75rem; color: var(--text-muted);">负向提示词 (Negative Prompt - 去重合并):</label>
-          <div class="prompt-display" style="max-height: 40px;">${p.negative_prompt}</div>
+          <div class="prompt-display" style="max-height: 40px;">${escapeHtml(p.negative_prompt)}</div>
         </div>
         <div style="display: flex; gap: 1rem; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;">
-          <span>尺寸: <strong>${p.width}x${p.height}</strong></span>
-          <span>帧数: <strong>${p.frame_count}帧</strong></span>
-          <span>FPS: <strong>${p.fps}</strong></span>
-          <span>Seed: <strong>${p.seed}</strong></span>
+          <span>尺寸: <strong>${escapeHtml(p.width)}x${escapeHtml(p.height)}</strong></span>
+          <span>帧数: <strong>${escapeHtml(p.frame_count)}帧</strong></span>
+          <span>FPS: <strong>${escapeHtml(p.fps)}</strong></span>
+          <span>Seed: <strong>${escapeHtml(p.seed)}</strong></span>
         </div>
       </div>
       <div class="package-preview">
-        <div id="preview-box-${p.shot_id}" style="width: 100%; text-align: center;">
+        <div id="${previewId}" style="width: 100%; text-align: center;">
           <span style="font-size: 0.8rem; color: var(--text-muted);">未生成</span>
         </div>
-        <button class="btn btn-primary btn-sm" style="margin-top: 0.75rem; width: 100%;" onclick="handleRenderSingleShot('${p.shot_id}')">
+        <button class="btn btn-primary btn-sm render-shot" style="margin-top: 0.75rem; width: 100%;">
           ⚡ 渲染镜头
         </button>
       </div>
     `;
+    card.querySelector(".render-shot").addEventListener("click", () => handleRenderSingleShot(p.shot_id, previewId));
     container.appendChild(card);
   });
 }
 
-async function handleRenderSingleShot(shotId) {
+async function handleRenderSingleShot(shotId, previewId) {
   if (!currentProjectId) return;
-  const box = document.getElementById(`preview-box-${shotId}`);
-  box.innerHTML = `<span style="color: #38bdf8; font-size: 0.8rem;">⏳ 正在渲染中...</span>`;
+  const box = document.getElementById(previewId);
+  box.textContent = "⏳ 正在渲染中...";
 
   try {
-    const res = await fetch(`/api/shots/${shotId}/render`, {
+    const run = await apiJson(`/api/shots/${encodeURIComponent(shotId)}/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ project_id: currentProjectId })
     });
-    const run = await res.json();
     if (run.status === "success") {
-      box.innerHTML = `
-        <video class="video-player" src="/media/${currentProjectId}/outputs/${shotId}.mp4" controls autoplay loop muted></video>
-        <div style="font-size: 0.75rem; color: #34d399; margin-top: 0.2rem;">✅ 渲染成功</div>
-      `;
+      box.replaceChildren();
+      const video = document.createElement("video");
+      video.className = "video-player";
+      video.src = `/api/projects/${encodeURIComponent(currentProjectId)}/outputs/${encodeURIComponent(shotId)}.mp4`;
+      video.controls = true;
+      video.autoplay = true;
+      video.loop = true;
+      video.muted = true;
+      const status = document.createElement("div");
+      status.style.cssText = "font-size: 0.75rem; color: #34d399; margin-top: 0.2rem;";
+      status.textContent = "✅ 渲染成功";
+      box.append(video, status);
     } else {
-      box.innerHTML = `<span style="color: #f87171; font-size: 0.8rem;">❌ 渲染失败: ${run.error_json?.message || "未知错误"}</span>`;
+      box.textContent = `❌ 渲染失败: ${run.error_json?.message || "未知错误"}`;
     }
   } catch (err) {
-    box.innerHTML = `<span style="color: #f87171; font-size: 0.8rem;">❌ 请求失败: ${err.message}</span>`;
+    box.textContent = `❌ 请求失败: ${err.message}`;
   }
 }
 
@@ -449,10 +462,9 @@ async function handleBatchRender() {
 
   try {
     alert("🚀 批量渲染任务已启动！");
-    const res = await fetch(`/api/projects/${currentProjectId}/render_all`, {
+    await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}/render_all`, {
       method: "POST"
     });
-    const runs = await res.json();
     alert("✅ 批量渲染已执行完毕！");
     await loadPackages(currentProjectId);
   } catch (err) {
@@ -464,18 +476,17 @@ async function handleRoughCut() {
   if (!currentProjectId) return;
 
   try {
-    const res = await fetch(`/api/projects/${currentProjectId}/rough_cut`, {
+    await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}/rough_cut`, {
       method: "POST"
     });
-    const data = await res.json();
     alert("🎉 粗剪短片合成完毕！");
 
     const card = document.getElementById("rough-cut-card");
     card.style.display = "block";
     const player = document.getElementById("rough-cut-player");
-    player.src = `/media/${currentProjectId}/outputs/rough_cut.mp4?t=${Date.now()}`;
+    player.src = `/api/projects/${encodeURIComponent(currentProjectId)}/outputs/rough_cut.mp4?t=${Date.now()}`;
     player.load();
-    document.getElementById("rough-cut-download-btn").href = `/media/${currentProjectId}/outputs/rough_cut.mp4`;
+    document.getElementById("rough-cut-download-btn").href = `/api/projects/${encodeURIComponent(currentProjectId)}/rough_cut/download`;
   } catch (err) {
     alert("粗剪合成失败: " + err.message);
   }
@@ -483,8 +494,7 @@ async function handleRoughCut() {
 
 async function openProductionReportModal() {
   if (!currentProjectId) return;
-  const res = await fetch(`/api/projects/${currentProjectId}/packages`);
-  const data = await res.json();
+  const data = await apiJson(`/api/projects/${encodeURIComponent(currentProjectId)}/packages`);
   document.getElementById("report-markdown-body").innerText = data.production_report || "暂无报告";
   document.getElementById("report-modal").classList.add("active");
 }

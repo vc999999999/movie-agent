@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import copy
-import json
-import pytest
 from agent.models import ShotPrompt, ShotSpec
 from agent.workflow import workflow_registry
 
@@ -72,7 +69,6 @@ def test_workflow_deterministic_patching_and_immutability(tmp_path):
         prompt_language="en",
         positive_prompt="Cinematic rain action, photorealistic",
         negative_prompt="blurry, bad quality",
-        video_prompt="running in rain",
         seed=12345678,
         steps=30,
         cfg=6.5,

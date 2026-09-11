@@ -1,8 +1,9 @@
-.venv/
 __pycache__/
-*.pyc
-.pytest_cache/
-.DS_Store
+*.py[cod]
 .env
-projects/*.db
-projects/*/outputs/*.mp4
+.pytest_cache/
+projects/movie_agent.db*
+projects/prj_*/
+node_modules/
+web/dist/
+.venv/

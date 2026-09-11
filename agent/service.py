@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
-import logging
-import os
 from pathlib import Path
 from typing import Any, Optional
 import uuid
@@ -15,18 +12,21 @@ from agent.comfyui import comfyui_client
 from server.db import db
 from agent.llm import llm_service
 from agent.models import (
+    AuteurContext,
+    AuteurSelection,
+    BriefExtraction,
     CreativeBrief,
-    ErrorDetail,
+    FilmProductionPack,
     ProjectBible,
-    ProjectStatus,
     QuestionsResponse,
     RenderRun,
     SceneSpec,
     ScreenplayPackage,
-    ShotPrompt,
     ShotSpec,
-    WorkflowPlan,
+    TreatmentOption,
+    TreatmentPackage,
 )
+from agent.production_packs import auteur_profile_registry, production_pack_registry
 from agent.prompt_compiler import prompt_compiler
 from agent.questions import (
     apply_safe_defaults,
@@ -34,8 +34,6 @@ from agent.questions import (
     select_questions,
 )
 from agent.workflow import workflow_registry
-
-logger = logging.getLogger(__name__)
 
 class ProjectService:
     def __init__(self):
@@ -45,6 +43,137 @@ class ProjectService:
         self.compiler = prompt_compiler
         self.workflows = workflow_registry
         self.continuity = continuity_checker
+        self.production_packs = production_pack_registry
+        self.auteur_profiles = auteur_profile_registry
+
+    def get_auteur_context(self, project_id: str) -> Optional[AuteurContext]:
+        artifact = self.db.get_latest_artifact(project_id, "auteur_profile")
+        return AuteurContext(**artifact["content"]) if artifact else None
+
+    def apply_auteur_profile(
+        self,
+        project_id: str,
+        profile_id: str,
+        variant_id: Optional[str] = None,
+        intensity: str = "balanced",
+        preserve: Optional[list[str]] = None,
+    ) -> AuteurContext:
+        project = self.db.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+        profile = self.auteur_profiles.get(profile_id)
+        variant = self.auteur_profiles.variant(profile, variant_id)
+        selection = AuteurSelection(
+            profile_id=profile.profile_id,
+            variant_id=variant.variant_id,
+            intensity=intensity,
+            preserve=preserve or [],
+        )
+        context = AuteurContext(profile=profile, selection=selection)
+        self.db.invalidate_artifacts(project_id, [
+            "auteur_profile", "treatments", "selected_treatment", "production_pack", "project_bible",
+            "screenplay", "shot_list", "continuity_report", "grammar_report",
+            "auteur_report", "prompt_package", "workflow_plan", "production_report", "rough_cut",
+        ])
+        self.db.save_artifact(project_id, "auteur_profile", context.model_dump(), status="confirmed")
+        if project["status"] not in ("collecting", "brief_review"):
+            self.db.update_project_status(project_id, "brief_review")
+        return context
+
+    def clear_auteur_profile(self, project_id: str) -> None:
+        project = self.db.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+        self.db.invalidate_artifacts(project_id, [
+            "auteur_profile", "treatments", "selected_treatment", "production_pack", "project_bible",
+            "screenplay", "shot_list", "continuity_report", "grammar_report",
+            "auteur_report", "prompt_package", "workflow_plan", "production_report", "rough_cut",
+        ])
+        if project["status"] not in ("collecting", "brief_review"):
+            self.db.update_project_status(project_id, "brief_review")
+
+    def _record_questions(self, response: QuestionsResponse) -> QuestionsResponse:
+        self.db.save_artifact(
+            response.project_id,
+            "questions",
+            response.model_dump(),
+            status="current",
+        )
+        return response
+
+    def _finish_brief_collection(
+        self,
+        project_id: str,
+        brief_data: dict[str, Any],
+        round_count: int,
+    ) -> QuestionsResponse:
+        final_brief, assumptions = apply_safe_defaults(
+            brief_data,
+            brief_data.get("agent_assumptions", []),
+        )
+        final_brief["agent_assumptions"] = list(dict.fromkeys(assumptions))
+        brief = CreativeBrief(**final_brief)
+        canonical = brief.model_dump()
+        self.db.update_project_brief(project_id, canonical, title=brief.title)
+        self.db.update_project_status(project_id, "brief_review")
+        self.db.save_artifact(project_id, "creative_brief", canonical, status="ready_for_review")
+        return self._record_questions(QuestionsResponse(
+            project_id=project_id,
+            status="brief_review",
+            round=round_count,
+            brief_completion=1.0,
+            questions=[],
+            assumptions=brief.agent_assumptions,
+            can_confirm=True,
+        ))
+
+    def _merge_brief(
+        self,
+        project_id: str,
+        current: dict[str, Any],
+        extraction: BriefExtraction,
+    ) -> dict[str, Any]:
+        merged = {**current, **extraction.known}
+        assumptions = [*merged.get("agent_assumptions", []), *extraction.assumptions]
+        merged["agent_assumptions"] = list(dict.fromkeys(assumptions))
+        self.db.update_project_brief(project_id, merged, title=merged.get("title"))
+        return merged
+
+    def _next_questions(
+        self,
+        project_id: str,
+        brief: dict[str, Any],
+        extraction: BriefExtraction,
+        completed_rounds: int,
+        force_review: bool = False,
+    ) -> QuestionsResponse:
+        completion = calculate_brief_completion(brief)
+        if (
+            force_review
+            or completed_rounds >= settings.max_question_rounds
+            or (completion >= 0.85 and not extraction.conflicts)
+        ):
+            return self._finish_brief_collection(project_id, brief, completed_rounds)
+
+        questions = select_questions(
+            known=brief,
+            conflicts=extraction.conflicts,
+            confidence=extraction.confidence,
+            asked_fields=set(),
+            max_questions=settings.max_questions_per_round,
+        )
+        if not questions:
+            return self._finish_brief_collection(project_id, brief, completed_rounds)
+
+        return self._record_questions(QuestionsResponse(
+            project_id=project_id,
+            status="collecting",
+            round=completed_rounds + 1,
+            brief_completion=completion,
+            questions=questions,
+            assumptions=brief.get("agent_assumptions", []),
+            can_confirm=completion >= 0.6,
+        ))
 
     # 10.1 Projects
     def create_project(self, source_text: str, title: Optional[str] = None) -> dict[str, Any]:
@@ -67,96 +196,46 @@ class ProjectService:
 
         source_text = project["source_text"]
         if new_user_text:
-            source_text += f"\n{new_user_text}"
+            source_text = self.db.append_project_source(project_id, new_user_text)
             self.db.add_message(project_id, "user", new_user_text)
 
         current_brief = project.get("brief", {})
         extraction = await self.llm.extract_brief(source_text, previous_brief=current_brief)
-
-        # Merge extracted known fields into brief
-        merged_brief = dict(current_brief)
-        merged_brief.update(extraction.known)
-        for assump in extraction.assumptions:
-            if "agent_assumptions" not in merged_brief:
-                merged_brief["agent_assumptions"] = []
-            if assump not in merged_brief["agent_assumptions"]:
-                merged_brief["agent_assumptions"].append(assump)
-
-        self.db.update_project_brief(project_id, merged_brief, title=merged_brief.get("title"))
-
-        # Check round and completion
-        completion = calculate_brief_completion(merged_brief)
+        merged_brief = self._merge_brief(project_id, current_brief, extraction)
         round_count = project.get("round_count", 0)
-
-        # Determine if we should proceed to brief_review
-        ready_to_review = False
-        if round_count >= settings.max_question_rounds:
-            ready_to_review = True
-        elif completion >= 0.85 and not extraction.conflicts:
-            ready_to_review = True
-        elif any(k in source_text for k in ["直接生成", "跳过反问", "不需要修改", "确认并生成"]):
-            ready_to_review = True
-
-        if ready_to_review:
-            # Apply safe defaults
-            final_brief, updated_assump = apply_safe_defaults(merged_brief, merged_brief.get("agent_assumptions", []))
-            final_brief["agent_assumptions"] = updated_assump
-            self.db.update_project_brief(project_id, final_brief)
-            self.db.update_project_status(project_id, "brief_review")
-            self.db.save_artifact(project_id, "creative_brief", final_brief, status="ready_for_review")
-
-            return QuestionsResponse(
-                project_id=project_id,
-                status="brief_review",
-                round=round_count,
-                brief_completion=1.0,
-                questions=[],
-                assumptions=updated_assump,
-                can_confirm=True,
-            )
-
-        # Select questions
-        questions = select_questions(
-            known=merged_brief,
-            conflicts=extraction.conflicts,
-            confidence=extraction.confidence,
-            asked_fields=set(),
-            max_questions=settings.max_questions_per_round,
+        return self._next_questions(
+            project_id,
+            merged_brief,
+            extraction,
+            round_count,
+            force_review=any(
+                phrase in source_text
+                for phrase in ["直接生成", "跳过反问", "不需要修改", "确认并生成"]
+            ),
         )
 
-        if not questions:
-            # No more questions to ask
-            final_brief, updated_assump = apply_safe_defaults(merged_brief, merged_brief.get("agent_assumptions", []))
-            final_brief["agent_assumptions"] = updated_assump
-            self.db.update_project_brief(project_id, final_brief)
-            self.db.update_project_status(project_id, "brief_review")
-            self.db.save_artifact(project_id, "creative_brief", final_brief, status="ready_for_review")
-
-            return QuestionsResponse(
-                project_id=project_id,
-                status="brief_review",
-                round=round_count,
-                brief_completion=1.0,
-                questions=[],
-                assumptions=updated_assump,
-                can_confirm=True,
-            )
-
-        return QuestionsResponse(
-            project_id=project_id,
-            status="collecting",
-            round=round_count + 1,
-            brief_completion=completion,
-            questions=questions,
-            assumptions=merged_brief.get("agent_assumptions", []),
-            can_confirm=completion >= 0.6,
-        )
+    def get_questions(self, project_id: str) -> QuestionsResponse:
+        if not self.db.get_project(project_id):
+            raise ValueError(f"Project {project_id} not found")
+        artifact = self.db.get_latest_artifact(project_id, "questions")
+        if not artifact:
+            raise ValueError("Questions have not been generated")
+        return QuestionsResponse(**artifact["content"])
 
     # Submit answers
     async def answer_questions(self, project_id: str, answers: list[dict[str, str]]) -> QuestionsResponse:
         project = self.db.get_project(project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
+
+        current = self.get_questions(project_id)
+        allowed_fields = {question.field for question in current.questions}
+        answer_fields = [answer.get("field", "") for answer in answers]
+        invalid_fields = sorted(set(answer_fields) - allowed_fields)
+        if invalid_fields:
+            raise ValueError(f"Answers contain fields that were not asked: {', '.join(invalid_fields)}")
+        if len(answer_fields) != len(set(answer_fields)):
+            raise ValueError("Each question may be answered only once per round")
 
         round_num = self.db.increment_project_round(project_id)
         self.db.add_message(project_id, "user", f"Answers: {json.dumps(answers, ensure_ascii=False)}")
@@ -168,71 +247,8 @@ class ProjectService:
             answers=answers,
         )
 
-        merged_brief = dict(project.get("brief", {}))
-        merged_brief.update(extraction.known)
-        for assump in extraction.assumptions:
-            if "agent_assumptions" not in merged_brief:
-                merged_brief["agent_assumptions"] = []
-            if assump not in merged_brief["agent_assumptions"]:
-                merged_brief["agent_assumptions"].append(assump)
-
-        self.db.update_project_brief(project_id, merged_brief)
-
-        completion = calculate_brief_completion(merged_brief)
-        ready_to_review = round_num >= settings.max_question_rounds or (completion >= 0.85 and not extraction.conflicts)
-
-        if ready_to_review:
-            final_brief, updated_assump = apply_safe_defaults(merged_brief, merged_brief.get("agent_assumptions", []))
-            final_brief["agent_assumptions"] = updated_assump
-            self.db.update_project_brief(project_id, final_brief)
-            self.db.update_project_status(project_id, "brief_review")
-            self.db.save_artifact(project_id, "creative_brief", final_brief, status="ready_for_review")
-
-            return QuestionsResponse(
-                project_id=project_id,
-                status="brief_review",
-                round=round_num,
-                brief_completion=1.0,
-                questions=[],
-                assumptions=updated_assump,
-                can_confirm=True,
-            )
-
-        # Select next questions
-        questions = select_questions(
-            known=merged_brief,
-            conflicts=extraction.conflicts,
-            confidence=extraction.confidence,
-            asked_fields=set(),
-            max_questions=settings.max_questions_per_round,
-        )
-
-        if not questions:
-            final_brief, updated_assump = apply_safe_defaults(merged_brief, merged_brief.get("agent_assumptions", []))
-            final_brief["agent_assumptions"] = updated_assump
-            self.db.update_project_brief(project_id, final_brief)
-            self.db.update_project_status(project_id, "brief_review")
-            self.db.save_artifact(project_id, "creative_brief", final_brief, status="ready_for_review")
-
-            return QuestionsResponse(
-                project_id=project_id,
-                status="brief_review",
-                round=round_num,
-                brief_completion=1.0,
-                questions=[],
-                assumptions=updated_assump,
-                can_confirm=True,
-            )
-
-        return QuestionsResponse(
-            project_id=project_id,
-            status="collecting",
-            round=round_num,
-            brief_completion=completion,
-            questions=questions,
-            assumptions=merged_brief.get("agent_assumptions", []),
-            can_confirm=completion >= 0.6,
-        )
+        merged_brief = self._merge_brief(project_id, project.get("brief", {}), extraction)
+        return self._next_questions(project_id, merged_brief, extraction, round_num)
 
     # 10.1 Brief review & confirm
     def update_brief(self, project_id: str, updates: dict[str, Any]) -> CreativeBrief:
@@ -245,6 +261,12 @@ class ProjectService:
         brief = CreativeBrief(**current)
         self.db.update_project_brief(project_id, brief.model_dump(), title=brief.title)
         self.db.save_artifact(project_id, "creative_brief", brief.model_dump(), status="draft")
+        self.db.invalidate_artifacts(project_id, [
+            "treatments", "selected_treatment", "production_pack",
+            "project_bible", "screenplay", "shot_list", "continuity_report",
+            "grammar_report", "auteur_report", "prompt_package", "workflow_plan", "production_report", "rough_cut",
+        ])
+        self.db.update_project_status(project_id, "brief_review")
         return brief
 
     async def confirm_brief(self, project_id: str, confirmed_brief: Optional[dict[str, Any]] = None) -> CreativeBrief:
@@ -255,12 +277,76 @@ class ProjectService:
         data = confirmed_brief or project.get("brief", {})
         brief = CreativeBrief(**data)
         self.db.update_project_brief(project_id, brief.model_dump(), title=brief.title)
+        self.db.invalidate_artifacts(project_id, [
+            "treatments", "selected_treatment", "production_pack", "project_bible",
+            "screenplay", "shot_list", "continuity_report", "grammar_report",
+            "auteur_report", "prompt_package", "workflow_plan", "production_report", "rough_cut",
+        ])
         self.db.save_artifact(project_id, "creative_brief", brief.model_dump(), status="confirmed")
         self.db.update_project_status(project_id, "screenplay_ready")
 
         # Auto trigger screenplay generation
         await self.generate_screenplay(project_id)
         return brief
+
+    async def generate_treatments(self, project_id: str) -> TreatmentPackage:
+        project = self.db.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+
+        brief = CreativeBrief(**project["brief"])
+        package = await self.llm.generate_treatments(
+            brief,
+            self.production_packs.relevant(brief),
+            self.get_auteur_context(project_id),
+        )
+        option_ids = [option.treatment_id for option in package.options]
+        if len(option_ids) != len(set(option_ids)):
+            raise ValueError("Treatment IDs must be unique")
+        if package.recommendation not in option_ids:
+            raise ValueError("Treatment recommendation does not reference an option")
+        for option in package.options:
+            self.production_packs.get(option.production_pack_id)
+
+        self.db.invalidate_artifacts(project_id, [
+            "selected_treatment", "production_pack", "project_bible", "screenplay",
+            "shot_list", "continuity_report", "grammar_report", "prompt_package",
+            "auteur_report", "workflow_plan", "production_report", "rough_cut",
+        ])
+        self.db.save_artifact(project_id, "creative_brief", brief.model_dump(), status="confirmed")
+        self.db.save_artifact(project_id, "treatments", package.model_dump(), status="draft")
+        self.db.update_project_status(project_id, "treatment_review")
+        return package
+
+    def get_treatments(self, project_id: str) -> Optional[TreatmentPackage]:
+        artifact = self.db.get_latest_artifact(project_id, "treatments")
+        return TreatmentPackage(**artifact["content"]) if artifact else None
+
+    async def confirm_treatment(
+        self,
+        project_id: str,
+        treatment_id: str,
+        production_pack_id: Optional[str] = None,
+    ) -> TreatmentOption:
+        package = self.get_treatments(project_id)
+        if not package:
+            raise ValueError("Treatments have not been generated")
+        selected = next((option for option in package.options if option.treatment_id == treatment_id), None)
+        if not selected:
+            raise ValueError(f"Treatment {treatment_id} not found")
+
+        pack = self.production_packs.get(production_pack_id or selected.production_pack_id)
+        selected = selected.model_copy(update={"production_pack_id": pack.pack_id})
+        self.db.invalidate_artifacts(project_id, [
+            "selected_treatment", "production_pack", "project_bible", "screenplay",
+            "shot_list", "continuity_report", "grammar_report", "prompt_package",
+            "auteur_report", "workflow_plan", "production_report", "rough_cut",
+        ])
+        self.db.save_artifact(project_id, "selected_treatment", selected.model_dump(), status="confirmed")
+        self.db.save_artifact(project_id, "production_pack", pack.model_dump(), status="confirmed")
+        self.db.update_project_status(project_id, "screenplay_ready")
+        await self.generate_screenplay(project_id)
+        return selected
 
     # 10.2 Screenplay & Shots
     async def generate_screenplay(self, project_id: str) -> ScreenplayPackage:
@@ -269,9 +355,19 @@ class ProjectService:
             raise ValueError(f"Project {project_id} not found")
 
         brief = CreativeBrief(**project["brief"])
-        screenplay_pkg = await self.llm.build_screenplay(brief)
+        treatment_art = self.db.get_latest_artifact(project_id, "selected_treatment")
+        treatment = TreatmentOption(**treatment_art["content"]) if treatment_art else None
+        screenplay_pkg = await self.llm.build_screenplay(
+            brief,
+            treatment,
+            self.get_auteur_context(project_id),
+        )
 
         # Save artifacts
+        self.db.invalidate_artifacts(project_id, [
+            "shot_list", "continuity_report", "grammar_report", "prompt_package",
+            "auteur_report", "workflow_plan", "production_report", "rough_cut",
+        ])
         self.db.save_artifact(project_id, "project_bible", screenplay_pkg.project_bible.model_dump(), status="confirmed")
         self.db.save_artifact(project_id, "screenplay", [s.model_dump() for s in screenplay_pkg.scenes], status="confirmed")
 
@@ -304,25 +400,37 @@ class ProjectService:
             scenes=[SceneSpec(**s) for s in screenplay_data["scenes"]],
         )
 
-        shots = await self.llm.build_shot_list(screenplay_pkg, brief)
+        pack_art = self.db.get_latest_artifact(project_id, "production_pack")
+        pack = FilmProductionPack(**pack_art["content"]) if pack_art else None
+        auteur = self.get_auteur_context(project_id)
+        shots = await self.llm.build_shot_list(screenplay_pkg, brief, pack, auteur)
 
-        # Validate total duration (5% tolerance)
+        if not shots:
+            raise ValueError("LLM returned an empty shot list")
+
+        # Reject invalid plans instead of silently stretching one shot past its limit.
         total_dur = sum(s.duration_seconds for s in shots)
         target_dur = brief.duration_seconds
         tolerance = target_dur * 0.05
         if abs(total_dur - target_dur) > tolerance:
-            # Adjust last shot duration to strictly satisfy conservation
-            diff = round(target_dur - total_dur, 1)
-            new_dur = round(shots[-1].duration_seconds + diff, 1)
-            if new_dur > 0:
-                shots[-1].duration_seconds = new_dur
+            raise ValueError(
+                f"Shot duration total {total_dur:.1f}s exceeds the 5% tolerance for {target_dur}s"
+            )
 
         # Continuity check
         issues = self.continuity.check_deterministic(shots, screenplay_pkg.project_bible)
+        grammar_issues = self.production_packs.validate_shots(shots, pack) if pack else []
+        auteur_issues = self.auteur_profiles.validate_shots(shots, auteur) if auteur else []
 
         # Save artifacts
+        self.db.invalidate_artifacts(
+            project_id,
+            ["prompt_package", "workflow_plan", "production_report", "rough_cut"],
+        )
         self.db.save_artifact(project_id, "shot_list", [s.model_dump() for s in shots], status="draft")
         self.db.save_artifact(project_id, "continuity_report", [i.model_dump() for i in issues], status="draft")
+        self.db.save_artifact(project_id, "grammar_report", [i.model_dump() for i in grammar_issues], status="draft")
+        self.db.save_artifact(project_id, "auteur_report", [i.model_dump() for i in auteur_issues], status="draft")
         self.db.update_project_status(project_id, "shots_review")
 
         return shots
@@ -350,6 +458,11 @@ class ProjectService:
             raise ValueError(f"Shot {shot_id} not found in project {project_id}")
 
         self.db.save_artifact(project_id, "shot_list", updated_shots, status="draft")
+        self.db.invalidate_artifacts(
+            project_id,
+            ["prompt_package", "workflow_plan", "production_report", "rough_cut"],
+        )
+        self.db.update_project_status(project_id, "shots_review")
 
         # Run continuity recheck
         screenplay_data = self.get_screenplay(project_id)
@@ -359,12 +472,31 @@ class ProjectService:
             issues = self.continuity.check_deterministic(all_specs, bible)
             self.db.save_artifact(project_id, "continuity_report", [i.model_dump() for i in issues], status="draft")
 
+            pack_art = self.db.get_latest_artifact(project_id, "production_pack")
+            if pack_art:
+                pack = FilmProductionPack(**pack_art["content"])
+                grammar_issues = self.production_packs.validate_shots(all_specs, pack)
+                self.db.save_artifact(project_id, "grammar_report", [i.model_dump() for i in grammar_issues], status="draft")
+
+            auteur = self.get_auteur_context(project_id)
+            if auteur:
+                auteur_issues = self.auteur_profiles.validate_shots(all_specs, auteur)
+                self.db.save_artifact(project_id, "auteur_report", [i.model_dump() for i in auteur_issues], status="draft")
+
         return target_shot
 
     async def confirm_shots(self, project_id: str) -> list[dict[str, Any]]:
         shots_data = self.get_shots(project_id)
         if not shots_data:
             raise ValueError(f"No shots found for project {project_id}")
+        grammar_art = self.db.get_latest_artifact(project_id, "grammar_report")
+        auteur_art = self.db.get_latest_artifact(project_id, "auteur_report")
+        reports = [artifact for artifact in (grammar_art, auteur_art) if artifact]
+        grammar_errors = [
+            issue for artifact in reports for issue in artifact["content"] if issue["severity"] == "error"
+        ]
+        if grammar_errors:
+            raise ValueError(f"Shot list has {len(grammar_errors)} directing grammar error(s)")
 
         self.db.save_artifact(project_id, "shot_list", shots_data, status="confirmed")
         self.db.update_project_status(project_id, "package_ready")
@@ -385,6 +517,8 @@ class ProjectService:
 
         bible = ProjectBible(**screenplay_data["project_bible"])
         shots = [ShotSpec(**s) for s in self.get_shots(project_id)]
+        if not shots:
+            raise ValueError("Shot list required to compile packages")
 
         prompt_packages: list[dict[str, Any]] = []
         workflow_plans: list[dict[str, Any]] = []
@@ -393,9 +527,18 @@ class ProjectService:
         patched_dir = project_dir / "patched_workflows"
         patched_dir.mkdir(parents=True, exist_ok=True)
 
+        installed_nodes = set((await self.comfyui.get_object_info()).keys())
+        pack_art = self.db.get_latest_artifact(project_id, "production_pack")
+        preferred_workflow_id = pack_art["content"]["generation_recipe"]["workflow_id"] if pack_art else None
+
         for shot in shots:
             # 1. Select workflow
-            plan = self.workflows.select_workflow(shot, aspect_ratio=bible.aspect_ratio)
+            plan = self.workflows.select_workflow(
+                shot,
+                aspect_ratio=bible.aspect_ratio,
+                comfyui_installed_nodes=installed_nodes,
+                preferred_workflow_id=preferred_workflow_id,
+            )
 
             # 2. Compile prompt
             wf_profile = self.workflows.get_profile(plan.workflow_id).model_dump() if plan.workflow_id else None
@@ -412,7 +555,7 @@ class ProjectService:
             # 3. Patch workflow JSON if matched
             if plan.status == "matched" and plan.workflow_id:
                 out_path = patched_dir / f"{shot.shot_id}_workflow.json"
-                patched_dict, err = self.workflows.patch_workflow(
+                _, err = self.workflows.patch_workflow(
                     workflow_id=plan.workflow_id,
                     prompt_pkg=prompt_pkg,
                     output_file_path=out_path,
@@ -510,14 +653,22 @@ class ProjectService:
         target_plan = next((p for p in wf_plans if p["shot_id"] == shot_id), None)
         target_prompt = next((p for p in prompts if p["shot_id"] == shot_id), None)
 
-        if not target_plan or not target_plan.get("workflow_id"):
+        if (
+            not target_plan
+            or target_plan.get("status") != "matched"
+            or not target_plan.get("workflow_id")
+            or not target_prompt
+        ):
             raise ValueError(f"Shot {shot_id} has no matched workflow")
 
         workflow_path = target_plan.get("patched_workflow_path")
-        if not workflow_path or not os.path.exists(workflow_path):
+        if not workflow_path:
+            raise ValueError(f"Patched workflow JSON for {shot_id} is missing")
+        workflow_file = self._project_file(project_id, workflow_path)
+        if not workflow_file.is_file():
             raise ValueError(f"Patched workflow JSON for {shot_id} does not exist at {workflow_path}")
 
-        with open(workflow_path, "r", encoding="utf-8") as f:
+        with workflow_file.open("r", encoding="utf-8") as f:
             workflow_json = json.load(f)
 
         run_id = f"run_{uuid.uuid4().hex[:8]}"
@@ -528,7 +679,6 @@ class ProjectService:
             "workflow_id": target_plan["workflow_id"],
             "status": "running",
             "request_json": target_prompt,
-            "created_at": "",
         }
         self.db.create_render_run(run_data)
 
@@ -546,10 +696,24 @@ class ProjectService:
             self.db.update_render_run(run_id, status="failed", error_json=exec_err.model_dump())
             return RenderRun(**self.db.get_render_run(run_id))  # type: ignore
 
-        # Download asset
+        asset = self.comfyui.first_video_output(history_res or {})
+        if not asset:
+            error = {"code": "COMFYUI_OUTPUT_MISSING", "message": "ComfyUI 任务未输出视频文件"}
+            self.db.update_render_run(run_id, status="failed", error_json=error)
+            return RenderRun(**self.db.get_render_run(run_id))  # type: ignore[arg-type]
+
         out_dir = settings.data_dir / project_id / "outputs"
         dest_video = out_dir / f"{shot_id}.mp4"
-        sha = await self.comfyui.download_output_asset(f"{prompt_id}.mp4", "output", "video", dest_video)
+        sha = await self.comfyui.download_output_asset(
+            asset["filename"],
+            asset["subfolder"],
+            asset["type"],
+            dest_video,
+        )
+        if not sha:
+            error = {"code": "COMFYUI_DOWNLOAD_FAILED", "message": "ComfyUI 输出文件下载失败"}
+            self.db.update_render_run(run_id, status="failed", error_json=error)
+            return RenderRun(**self.db.get_render_run(run_id))  # type: ignore[arg-type]
 
         output_info = {
             "prompt_id": prompt_id,
@@ -563,18 +727,20 @@ class ProjectService:
     async def render_all_shots(self, project_id: str) -> list[RenderRun]:
         self.db.update_project_status(project_id, "rendering")
         shots = self.get_shots(project_id)
+        if not shots:
+            raise ValueError(f"No shots found for project {project_id}")
         runs = []
         all_success = True
 
-        for s in shots:
-            try:
+        try:
+            for s in shots:
                 run = await self.render_shot(project_id, s["shot_id"])
                 runs.append(run)
                 if run.status != "success":
                     all_success = False
-            except Exception as e:
-                logger.error(f"Render shot {s['shot_id']} failed: {e}")
-                all_success = False
+        except Exception:
+            self.db.update_project_status(project_id, "failed")
+            raise
 
         if all_success:
             self.db.update_project_status(project_id, "completed")
@@ -593,29 +759,56 @@ class ProjectService:
         out_dir.mkdir(parents=True, exist_ok=True)
         rough_cut_path = out_dir / "rough_cut.mp4"
 
-        # Prepare concat list
+        current_prompts = {
+            prompt["shot_id"]: prompt
+            for prompt in self.get_packages(project_id).get("prompt_packages", [])
+        }
+        missing = []
+        for shot in shots:
+            shot_id = shot["shot_id"]
+            run = self.db.get_latest_successful_render(project_id, shot_id)
+            if (
+                not (out_dir / f"{shot_id}.mp4").is_file()
+                or not run
+                or run["request_json"] != current_prompts.get(shot_id)
+            ):
+                missing.append(shot_id)
+        if missing:
+            raise ValueError(f"Cannot create rough cut; missing current renders: {', '.join(missing)}")
+
         concat_list_file = out_dir / "concat_list.txt"
         with open(concat_list_file, "w", encoding="utf-8") as f:
             for s in shots:
                 shot_file = out_dir / f"{s['shot_id']}.mp4"
-                if not shot_file.exists():
-                    # Generate a placeholder 2s shot if not yet rendered
-                    cmd = f'ffmpeg -y -f lavfi -i testsrc=duration={s["duration_seconds"]}:size=1280x720:rate=24 -f lavfi -i sine=frequency=440:duration={s["duration_seconds"]} -pix_fmt yuv420p "{str(shot_file)}" -loglevel error'
-                    proc = await asyncio.create_subprocess_shell(cmd)
-                    await proc.communicate()
-                f.write(f"file '{shot_file.resolve()}'\n")
+                escaped_path = str(shot_file.resolve()).replace("'", "'\\''")
+                f.write(f"file '{escaped_path}'\n")
 
-        # Stitch videos with ffmpeg concat demuxer
-        cmd = f'ffmpeg -y -f concat -safe 0 -i "{str(concat_list_file)}" -c copy "{str(rough_cut_path)}" -loglevel error'
-        proc = await asyncio.create_subprocess_shell(cmd)
-        await proc.communicate()
+        args = [
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list_file),
+            "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            str(rough_cut_path), "-loglevel", "error",
+        ]
+        proc = await asyncio.create_subprocess_exec(*args, stderr=asyncio.subprocess.PIPE)
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0 or not rough_cut_path.is_file() or rough_cut_path.stat().st_size == 0:
+            rough_cut_path.unlink(missing_ok=True)
+            raise RuntimeError(f"FFmpeg rough cut failed: {stderr.decode(errors='replace')[-2000:]}")
 
-        if not rough_cut_path.exists():
-            # Fallback if concat copy had codec mismatch
-            cmd = f'ffmpeg -y -f concat -safe 0 -i "{str(concat_list_file)}" -c:v libx264 -pix_fmt yuv420p "{str(rough_cut_path)}" -loglevel error'
-            proc = await asyncio.create_subprocess_shell(cmd)
-            await proc.communicate()
-
+        self.db.save_artifact(
+            project_id,
+            "rough_cut",
+            {"file_path": str(rough_cut_path)},
+            status="confirmed",
+        )
         return str(rough_cut_path)
+
+    @staticmethod
+    def _project_file(project_id: str, path: str) -> Path:
+        project_root = (settings.data_dir / project_id).resolve()
+        raw_path = Path(path)
+        candidate = (raw_path if raw_path.is_absolute() else project_root / raw_path).resolve()
+        if not candidate.is_relative_to(project_root):
+            raise ValueError("Workflow path is outside the project directory")
+        return candidate
 
 project_service = ProjectService()

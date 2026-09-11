@@ -3,6 +3,7 @@ from pathlib import Path
 
 import json
 import logging
+import math
 import re
 from typing import Any, Optional, Type, TypeVar
 import httpx
@@ -10,16 +11,19 @@ from pydantic import BaseModel, ValidationError
 
 from server.config import settings
 from agent.models import (
+    AuteurContext,
     BriefExtraction,
     CharacterBible,
-    ContinuityIssue,
     CreativeBrief,
     DialogueLine,
+    FilmProductionPack,
     LocationBible,
     ProjectBible,
     SceneSpec,
     ScreenplayPackage,
     ShotSpec,
+    TreatmentOption,
+    TreatmentPackage,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,11 +87,15 @@ class LLMService:
         schema_cls: Type[T],
         fallback_fn: Optional[Any] = None
     ) -> T:
-        """Call LLM with 1 self-repair retry, or fall back to fallback generator if no API key."""
+        """Call the LLM with one schema-repair attempt.
+
+        Deterministic demo data is available only when explicitly enabled. Production
+        requests must fail visibly instead of being replaced by fabricated output.
+        """
         if not self.has_api_key:
-            if fallback_fn:
+            if settings.llm_mock_mode and fallback_fn:
                 return fallback_fn()
-            raise RuntimeError("OPENAI_API_KEY is not set and no fallback generator available")
+            raise RuntimeError("OPENAI_API_KEY is not set (set LLM_MOCK_MODE=true only for local demos/tests)")
 
         # First attempt
         content = await self.call_llm(system_prompt, user_prompt)
@@ -112,7 +120,7 @@ class LLMService:
                 return schema_cls.model_validate(parsed)
             except Exception as repair_err:
                 logger.error(f"Repair call also failed: {repair_err}")
-                if fallback_fn:
+                if settings.llm_mock_mode and fallback_fn:
                     logger.info("Using fallback generator after repair failure.")
                     return fallback_fn()
                 raise
@@ -231,13 +239,8 @@ class LLMService:
                         known[field] = val
                         confidence[field] = 1.0
 
-            # Find unknown
-            candidate_keys = ["duration_seconds", "aspect_ratio", "visual_style", "ending", "dialogue_mode", "conflict"]
-            unknown = [k for k in candidate_keys if k not in known or not known[k]]
-
             return BriefExtraction(
                 known=known,
-                unknown=unknown,
                 conflicts=conflicts,
                 confidence=confidence,
                 assumptions=assumptions,
@@ -245,10 +248,70 @@ class LLMService:
 
         return await self.structured_call(system_prompt, user_prompt, BriefExtraction, fallback_fn=fallback)
 
+    async def generate_treatments(
+        self,
+        brief: CreativeBrief,
+        packs: list[FilmProductionPack],
+        auteur: Optional[AuteurContext] = None,
+    ) -> TreatmentPackage:
+        system_prompt = Path(settings.prompts_dir / "generate_treatments.md").read_text(encoding="utf-8")
+        user_prompt = (
+            f"Creative Brief:\n{brief.model_dump_json(indent=2)}\n\n"
+            f"Available Production Packs:\n{json.dumps([p.model_dump() for p in packs], ensure_ascii=False, indent=2)}"
+        )
+        if auteur:
+            user_prompt += f"\n\nSelected Auteur Technique Context:\n{auteur.model_dump_json(indent=2)}"
+
+        def fallback() -> TreatmentPackage:
+            variant = next(
+                (item for item in auteur.profile.variants if item.variant_id == auteur.selection.variant_id),
+                None,
+            ) if auteur else None
+            options = [
+                TreatmentOption(
+                    treatment_id=f"treatment_{index:02d}",
+                    name=pack.name,
+                    core_question=brief.conflict or f"{brief.protagonist or '主角'}能否完成目标？",
+                    logline=brief.logline,
+                    structure="；".join(beat.purpose for beat in pack.narrative_pattern.beats),
+                    visual_strategy="；".join(filter(None, [
+                        pack.directing_grammar.intent,
+                        f"采用{variant.name}：{variant.techniques[0].instruction}" if variant else "",
+                    ])),
+                    production_pack_id=pack.pack_id,
+                    production_risk="high" if "action" in pack.pack_id else "medium",
+                    estimated_shots=max(3, min(30, math.ceil(brief.duration_seconds / pack.generation_recipe.max_duration_seconds))),
+                    technique_plan=[technique.technique_id for technique in variant.techniques] if variant else [],
+                    viewer_effect="；".join(technique.viewer_effect for technique in variant.techniques) if variant else "",
+                )
+                for index, pack in enumerate(packs[:3], start=1)
+            ]
+            return TreatmentPackage(
+                options=options,
+                recommendation=options[0].treatment_id,
+                recommendation_reason="首选方案与用户类型和关键词最匹配，并在当前工作流单镜头时长限制内可稳定拆解。",
+            )
+
+        return await self.structured_call(
+            system_prompt,
+            user_prompt,
+            TreatmentPackage,
+            fallback_fn=fallback,
+        )
+
     # 7.2 Call B: Build Screenplay
-    async def build_screenplay(self, brief: CreativeBrief) -> ScreenplayPackage:
+    async def build_screenplay(
+        self,
+        brief: CreativeBrief,
+        treatment: Optional[TreatmentOption] = None,
+        auteur: Optional[AuteurContext] = None,
+    ) -> ScreenplayPackage:
         system_prompt = Path(settings.prompts_dir / "build_screenplay.md").read_text(encoding="utf-8")
         user_prompt = f"Creative Brief:\n{brief.model_dump_json(indent=2)}"
+        if treatment:
+            user_prompt += f"\n\nConfirmed Treatment:\n{treatment.model_dump_json(indent=2)}"
+        if auteur:
+            user_prompt += f"\n\nSelected Auteur Technique Context:\n{auteur.model_dump_json(indent=2)}"
 
         def fallback() -> ScreenplayPackage:
             # Deterministic screenplay matching brief duration and themes
@@ -328,13 +391,19 @@ class LLMService:
     async def build_shot_list(
         self,
         screenplay_pkg: ScreenplayPackage,
-        brief: CreativeBrief
+        brief: CreativeBrief,
+        pack: Optional[FilmProductionPack] = None,
+        auteur: Optional[AuteurContext] = None,
     ) -> list[ShotSpec]:
         system_prompt = Path(settings.prompts_dir / "build_shots.md").read_text(encoding="utf-8")
         user_prompt = (
             f"Screenplay Package:\n{screenplay_pkg.model_dump_json(indent=2)}\n\n"
             f"Target Duration: {brief.duration_seconds} seconds"
         )
+        if pack:
+            user_prompt += f"\n\nRequired Production Pack:\n{pack.model_dump_json(indent=2)}"
+        if auteur:
+            user_prompt += f"\n\nSelected Auteur Technique Context:\n{auteur.model_dump_json(indent=2)}"
 
         class ShotListWrapper(BaseModel):
             shots: list[ShotSpec]
@@ -344,7 +413,8 @@ class LLMService:
             # For 45s: 3 ~ 4 shots; e.g. 3 shots of 15s or 8 shots of ~5.5s
             # Plan shots with duration 3.0 ~ 5.5s each, matching total_dur strictly within 5%!
             # Target count:
-            shot_count = max(3, min(10, int(round(total_dur / 4.5))))
+            max_duration = pack.generation_recipe.max_duration_seconds if pack else 8.0
+            shot_count = max(3, min(30, math.ceil(total_dur / min(4.5, max_duration))))
             dur_per_shot = round(total_dur / shot_count, 1)
 
             # Ensure sum matches total_dur exactly
@@ -355,6 +425,10 @@ class LLMService:
             shots = []
             char_id = screenplay_pkg.project_bible.characters[0].character_id
             loc_id = screenplay_pkg.project_bible.locations[0].location_id
+            auteur_variant = next(
+                (item for item in auteur.profile.variants if item.variant_id == auteur.selection.variant_id),
+                None,
+            ) if auteur else None
 
             shot_templates = [
                 {
@@ -395,10 +469,35 @@ class LLMService:
                 tmpl = shot_templates[i % len(shot_templates)]
                 s_id = f"s01_sh{i+1:02d}"
                 dur = durations[i]
+                sequence_name = next(iter(pack.directing_grammar.sequence_patterns)) if pack else None
+                sequence = pack.directing_grammar.sequence_patterns[sequence_name] if pack and sequence_name else []
+                beat = pack.narrative_pattern.beats[i % len(pack.narrative_pattern.beats)] if pack else None
+                technique_count = 2 if auteur and auteur.selection.intensity == "strong" else 1
+                apply_technique = bool(auteur_variant) and not (
+                    auteur.selection.intensity == "subtle" and i % 2
+                )
+                techniques = [
+                    auteur_variant.techniques[(i + offset) % len(auteur_variant.techniques)]
+                    for offset in range(technique_count)
+                ] if apply_technique and auteur_variant else []
                 shots.append(ShotSpec(
                     shot_id=s_id,
                     scene_id="scene_01",
                     order=i + 1,
+                    beat_id=f"beat_{beat.role}_{i + 1:02d}" if beat else None,
+                    grammar_pack_id=pack.pack_id if pack else None,
+                    sequence_pattern=sequence_name,
+                    shot_function=sequence[i % len(sequence)] if sequence else None,
+                    information_revealed=tmpl["purpose"] if pack else None,
+                    information_withheld=brief.ending if pack and i < shot_count - 1 else None,
+                    screen_direction="left_to_right" if pack else None,
+                    axis_id="axis_scene_01" if pack else None,
+                    auteur_profile_id=auteur.profile.profile_id if auteur else None,
+                    auteur_variant_id=auteur.selection.variant_id if auteur else None,
+                    technique_ids=[technique.technique_id for technique in techniques],
+                    technique_rationale="；".join(
+                        f"{technique.name}：{technique.instruction}" for technique in techniques
+                    ) or None,
                     duration_seconds=dur,
                     narrative_purpose=tmpl["purpose"],
                     subject_ids=[char_id],
@@ -406,9 +505,9 @@ class LLMService:
                     start_frame=tmpl["start"],
                     action=tmpl["action"],
                     end_frame=tmpl["end"],
-                    shot_size=tmpl["size"],
+                    shot_size=pack.directing_grammar.preferred_sizes[i % len(pack.directing_grammar.preferred_sizes)] if pack else tmpl["size"],
                     camera_angle=tmpl["angle"],
-                    camera_movement=tmpl["mov"],
+                    camera_movement=pack.directing_grammar.preferred_movements[i % len(pack.directing_grammar.preferred_movements)] if pack else tmpl["mov"],
                     composition=tmpl["comp"],
                     lens="35mm Anamorphic Prime",
                     fps=24,
@@ -420,7 +519,7 @@ class LLMService:
                     music_cue="紧张脉冲大提琴起奏" if i == 0 else None,
                     continuity_requirements=["主角风衣湿水质感保持", "环境冷幽蓝调色一致"],
                     reference_asset_ids=[],
-                    generation_mode=tmpl["mode"],
+                    generation_mode=pack.generation_recipe.generation_mode if pack else tmpl["mode"],
                     first_frame_required=True,
                     last_frame_required=False,
                 ))
@@ -429,27 +528,5 @@ class LLMService:
 
         res = await self.structured_call(system_prompt, user_prompt, ShotListWrapper, fallback_fn=lambda: ShotListWrapper(shots=fallback()))
         return res.shots
-
-    # 7.4 Call Review Continuity
-    async def review_continuity(
-        self,
-        shots: list[ShotSpec],
-        project_bible: ProjectBible
-    ) -> list[ContinuityIssue]:
-        system_prompt = Path(settings.prompts_dir / "continuity_review.md").read_text(encoding="utf-8")
-        shots_summary = [{"shot_id": s.shot_id, "start": s.start_frame, "action": s.action, "end": s.end_frame, "light": s.lighting} for s in shots]
-        user_prompt = f"Shots:\n{json.dumps(shots_summary, ensure_ascii=False)}"
-
-        class IssueListWrapper(BaseModel):
-            issues: list[ContinuityIssue]
-
-        def fallback() -> list[ContinuityIssue]:
-            return []
-
-        try:
-            res = await self.structured_call(system_prompt, user_prompt, IssueListWrapper, fallback_fn=lambda: IssueListWrapper(issues=[]))
-            return res.issues
-        except Exception:
-            return []
 
 llm_service = LLMService()

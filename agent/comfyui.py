@@ -2,11 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
 import logging
-import os
 from pathlib import Path
-import time
 from typing import Any, Callable, Optional
 import uuid
 
@@ -31,18 +28,9 @@ class ComfyUIClient:
         self.ws_url = f"ws://{self.host}:{self.port}/ws?clientId={self.client_id}"
         self.mock_mode = mock_mode if mock_mode is not None else settings.comfyui_mock_mode
 
-    async def is_server_reachable(self) -> bool:
-        """Check if real ComfyUI server is alive."""
-        try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(f"{self.base_url}/system_stats")
-                return resp.status_code == 200
-        except Exception:
-            return False
-
     async def get_object_info(self) -> dict[str, Any]:
         """Fetch available nodes from ComfyUI /object_info."""
-        if self.mock_mode or not await self.is_server_reachable():
+        if self.mock_mode:
             # Return standard nodes mock
             return {
                 "KSampler": {},
@@ -59,7 +47,7 @@ class ComfyUIClient:
                 "CogVideoSampler": {}
             }
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                 resp = await client.get(f"{self.base_url}/object_info")
                 resp.raise_for_status()
                 return resp.json()
@@ -78,9 +66,7 @@ class ComfyUIClient:
             "client_id": self.client_id
         }
 
-        # If mock mode or server unreachable, simulate submission
-        is_alive = await self.is_server_reachable()
-        if self.mock_mode or not is_alive:
+        if self.mock_mode:
             mock_prompt_id = f"mock_{uuid.uuid4().hex[:12]}"
             logger.info(f"ComfyUI mock mode active: generated prompt_id {mock_prompt_id}")
             return mock_prompt_id, None
@@ -88,14 +74,21 @@ class ComfyUIClient:
         # Real execution with exponential backoff
         for attempt in range(max_retries + 1):
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
                     resp = await client.post(f"{self.base_url}/prompt", json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
                         prompt_id = data.get("prompt_id")
-                        return prompt_id, None
+                        if prompt_id:
+                            return prompt_id, None
+                        return None, ErrorDetail(
+                            code="COMFYUI_INVALID_RESPONSE",
+                            message="ComfyUI 响应中缺少 prompt_id",
+                            details={"response": data},
+                            retryable=False,
+                        )
                     else:
-                        err_text = resp.text
+                        err_text = resp.text[:4000]
                         if "node_errors" in err_text:
                             return None, ErrorDetail(
                                 code="COMFYUI_NODE_ERROR",
@@ -130,10 +123,8 @@ class ComfyUIClient:
     ) -> tuple[Optional[dict[str, Any]], Optional[ErrorDetail]]:
         """Wait for prompt execution to complete."""
         # Check mock mode
-        if prompt_id.startswith("mock_") or self.mock_mode or not await self.is_server_reachable():
-            # Simulate progress steps
+        if self.mock_mode:
             for step in range(1, 4):
-                await asyncio.sleep(0.5)
                 if progress_callback:
                     progress_callback({"step": step, "max_steps": 3, "percent": int(step * 33.3)})
 
@@ -150,10 +141,11 @@ class ComfyUIClient:
             return mock_result, None
 
         # Real execution: poll /history/{prompt_id}
-        start_time = time.time()
-        while time.time() - start_time < timeout_seconds:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        while loop.time() < deadline:
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                     resp = await client.get(f"{self.base_url}/history/{prompt_id}")
                     if resp.status_code == 200:
                         data = resp.json()
@@ -167,7 +159,7 @@ class ComfyUIClient:
                                 return None, ErrorDetail(
                                     code="COMFYUI_EXECUTION_FAILED",
                                     message="ComfyUI 任务在生成过程中发生错误",
-                                    details=status_obj.get("messages", []),
+                                    details={"messages": status_obj.get("messages", [])},
                                     retryable=False,
                                 )
             except Exception as e:
@@ -192,44 +184,68 @@ class ComfyUIClient:
         """Download output file from ComfyUI /view or write mock asset."""
         dest_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if filename.startswith("mock_") or self.mock_mode or not await self.is_server_reachable():
+        if self.mock_mode:
             # Create a real playable video / image file using ffmpeg if available
-            dest_path_str = str(dest_path)
             if dest_path.suffix == ".mp4":
-                # Create a 2-second test color video with ffmpeg
-                cmd = f'ffmpeg -y -f lavfi -i testsrc=duration=2:size=1280x720:rate=24 -f lavfi -i sine=frequency=440:duration=2 -pix_fmt yuv420p "{dest_path_str}" -loglevel error'
-                proc = await asyncio.create_subprocess_shell(cmd)
-                await proc.communicate()
+                args = [
+                    "ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=duration=2:size=1280x720:rate=24",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-pix_fmt", "yuv420p",
+                    str(dest_path), "-loglevel", "error",
+                ]
             else:
-                # Create a sample test image
-                cmd = f'ffmpeg -y -f lavfi -i testsrc=size=1280x720:rate=1 -frames:v 1 "{dest_path_str}" -loglevel error'
-                proc = await asyncio.create_subprocess_shell(cmd)
-                await proc.communicate()
-
-            # If ffmpeg didn't run, fallback to writing dummy bytes
-            if not dest_path.exists():
-                with open(dest_path, "wb") as f:
-                    f.write(b"MOCK_ASSET_CONTENT_" + filename.encode())
-
-            hasher = hashlib.sha256()
-            with open(dest_path, "rb") as f:
-                hasher.update(f.read())
-            return hasher.hexdigest()
+                args = [
+                    "ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=1",
+                    "-frames:v", "1", str(dest_path), "-loglevel", "error",
+                ]
+            proc = await asyncio.create_subprocess_exec(*args, stderr=asyncio.subprocess.PIPE)
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.error("Mock asset generation failed: %s", stderr.decode(errors="replace"))
+                return None
+            return self._sha256(dest_path)
 
         # Real download
         try:
             params = {"filename": filename, "subfolder": subfolder, "type": asset_type}
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.get(f"{self.base_url}/view", params=params)
-                resp.raise_for_status()
-                with open(dest_path, "wb") as f:
-                    f.write(resp.content)
+            temp_path = dest_path.with_suffix(dest_path.suffix + ".part")
             hasher = hashlib.sha256()
-            with open(dest_path, "rb") as f:
-                hasher.update(f.read())
+            async with httpx.AsyncClient(timeout=60.0, trust_env=False) as client:
+                async with client.stream("GET", f"{self.base_url}/view", params=params) as resp:
+                    resp.raise_for_status()
+                    with temp_path.open("wb") as output:
+                        async for chunk in resp.aiter_bytes():
+                            output.write(chunk)
+                            hasher.update(chunk)
+            if not temp_path.exists() or temp_path.stat().st_size == 0:
+                raise RuntimeError("ComfyUI returned an empty asset")
+            temp_path.replace(dest_path)
             return hasher.hexdigest()
         except Exception as e:
             logger.error(f"Failed to download asset {filename}: {e}")
+            temp_path = dest_path.with_suffix(dest_path.suffix + ".part")
+            temp_path.unlink(missing_ok=True)
             return None
+
+    @staticmethod
+    def first_video_output(history: dict[str, Any]) -> Optional[dict[str, str]]:
+        """Return the first real video emitted by a ComfyUI output node."""
+        for node_output in history.get("outputs", {}).values():
+            for key in ("videos", "gifs"):
+                for asset in node_output.get(key, []):
+                    if asset.get("filename"):
+                        return {
+                            "filename": str(asset["filename"]),
+                            "subfolder": str(asset.get("subfolder", "")),
+                            "type": str(asset.get("type", "output")),
+                        }
+        return None
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        hasher = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
 
 comfyui_client = ComfyUIClient()

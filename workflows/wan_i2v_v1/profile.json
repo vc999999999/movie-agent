@@ -8,7 +8,5 @@
   "max_frames": 120,
   "required_models": ["Wan2.1-I2V-14B-720P.safetensors"],
   "required_nodes": ["WanVideoModelLoader", "LoadImage", "WanVideoSampler", "CLIPTextEncode", "VHS_VideoCombine"],
-  "accepted_references": ["character", "first_frame"],
-  "patch_map_path": "workflows/wan_i2v_v1/patch_map.json",
-  "workflow_path": "workflows/wan_i2v_v1/workflow_api.json"
+  "accepted_references": ["character", "first_frame"]
 }

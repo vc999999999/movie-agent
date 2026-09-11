@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from agent.models import CharacterBible, LocationBible, ProjectBible, ShotSpec
 from agent.prompt_compiler import (
     map_resolution,

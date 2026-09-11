@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Optional
-from agent.models import CreativeBrief, QuestionItem
+from typing import Any
+from agent.models import QuestionItem
 
 QUESTION_BANK: dict[str, dict[str, Any]] = {
     "duration_seconds": {
@@ -62,22 +62,7 @@ QUESTION_BANK: dict[str, dict[str, Any]] = {
     },
 }
 
-# Safe defaults to fill when rounds finish or user defaults
-SAFE_DEFAULTS: dict[str, Any] = {
-    "duration_seconds": 45,
-    "purpose": "trailer",
-    "platform": "other",
-    "aspect_ratio": "16:9",
-    "visual_style": "写实电影感，雨夜冷色调，35mm胶片质感",
-    "genre": ["悬疑", "犯罪", "赛博朋克"],
-    "tone": ["紧张", "冷峻", "神秘"],
-    "dialogue_mode": "voiceover",
-    "language": "zh-CN",
-    "ending": "预告片式悬念",
-    "protagonist": "侦探",
-    "protagonist_goal": "在暴风雨之夜追踪神秘凶手",
-    "conflict": "目标在阴暗街巷中不断设伏与潜逃",
-}
+DEFAULT_VISUAL_STYLE = "写实电影感，雨夜冷色调，35mm胶片质感"
 
 def calculate_priority(field: str, confidence: float, is_missing: bool, is_conflict: bool) -> float:
     meta = QUESTION_BANK.get(field, {"impact": 3, "blocking": False})
@@ -96,13 +81,13 @@ def select_questions(
     asked_fields: set[str],
     max_questions: int = 3
 ) -> list[QuestionItem]:
-    candidates: list[tuple[float, str, bool]] = []
+    candidates: list[tuple[float, str]] = []
 
     # Check conflicts first
     for field in conflicts:
         if field in QUESTION_BANK:
             score = calculate_priority(field, confidence.get(field, 0.5), is_missing=False, is_conflict=True)
-            candidates.append((score, field, True))
+            candidates.append((score, field))
 
     # Check missing fields
     for field, meta in QUESTION_BANK.items():
@@ -110,11 +95,11 @@ def select_questions(
             continue
         val = known.get(field)
         is_missing = val is None or val == "" or val == []
-        conf = confidence.get(field, 0.0) if not is_missing else 0.0
+        conf = confidence.get(field, 1.0) if not is_missing else 0.0
 
         if is_missing or conf < 0.7:
             score = calculate_priority(field, conf, is_missing, is_conflict=False)
-            candidates.append((score, field, False))
+            candidates.append((score, field))
 
     # Sort descending by priority score
     candidates.sort(key=lambda x: x[0], reverse=True)
@@ -122,7 +107,7 @@ def select_questions(
     selected: list[QuestionItem] = []
     selected_fields: set[str] = set()
 
-    for _, field, _ in candidates:
+    for _, field in candidates:
         if field in selected_fields:
             continue
         meta = QUESTION_BANK[field]
@@ -161,7 +146,7 @@ def apply_safe_defaults(known: dict[str, Any], assumptions: list[str]) -> tuple[
         updated["dialogue_mode"] = "voiceover"
         assumptions_out.append("未指定声音形式，默认采用旁白主导 (voiceover)，保障生成画面的口型稳定性")
     if not updated.get("visual_style"):
-        updated["visual_style"] = SAFE_DEFAULTS["visual_style"]
+        updated["visual_style"] = DEFAULT_VISUAL_STYLE
         assumptions_out.append("视觉风格默认采用写实电影感 (胶片质感、电影光影)")
     if not updated.get("ending"):
         updated["ending"] = "预告片式悬念"

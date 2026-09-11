@@ -1,0 +1,1 @@
+export { TreatmentsStage } from "./TreatmentsStage";

@@ -1,0 +1,29 @@
+pack_id: action_chase_v1
+version: 1.0.0
+name: 清晰空间动作追逐
+genres: [动作, 冒险, 犯罪, 科幻]
+keywords: [追逐, 逃亡, 战斗, 爆炸, 营救, 竞速]
+narrative_pattern:
+  pattern_id: action_chase_20_60
+  duration_range: [20, 60]
+  beats:
+    - {role: trigger, ratio: 0.12, purpose: 用明确事件触发行动}
+    - {role: orientation, ratio: 0.18, purpose: 建立目标、方向和空间关系}
+    - {role: pursuit, ratio: 0.40, purpose: 用逐级障碍推动追逐}
+    - {role: reversal, ratio: 0.20, purpose: 改变优势方或逃跑路线}
+    - {role: impact, ratio: 0.10, purpose: 以强动作或悬念收束}
+directing_grammar:
+  grammar_id: spatial_action
+  intent: 优先保证方向和动作因果清晰，再用短镜头提高速度感
+  preferred_sizes: [WS, MS, CU]
+  preferred_movements: [平移跟拍, 手持跟随, 快速摇摄]
+  max_same_size_run: 2
+  sequence_patterns:
+    pursuit: [establish_route, launch_action, obstacle_insert, reaction, direction_resume]
+    impact: [spatial_master, action_start, impact_detail, consequence]
+  forbidden_patterns: [连续复杂长镜头, 轴线无提示跳变, 单镜头多重肢体动作]
+generation_recipe:
+  workflow_id: wan_i2v_v1
+  generation_mode: image_to_video
+  max_duration_seconds: 4
+  unsupported: [multi_person_combat, precise_collision, long_continuous_camera_move]

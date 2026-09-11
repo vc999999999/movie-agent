@@ -120,18 +120,15 @@ class PromptCompiler:
         ]
         positive_prompt = ". ".join([layer for layer in layers if layer])
 
-        # 3. Video motion prompt
-        video_prompt = f"{shot.action.strip()}, {shot.camera_movement} camera movement, {shot.shot_size} shot, seamless fluid motion, photorealistic cinematography"
-
-        # 4. Negative prompt merging
+        # 3. Negative prompt merging
         wf_negatives = rules.get("default_negative_prompts", DEFAULT_NEGATIVE_PROMPTS)
         proj_negatives = [project_bible.global_negative_prompt] if project_bible.global_negative_prompt else []
         shot_negatives = ["motion blur artifact", "jump cuts", "deformed face"]
         negative_prompt = merge_negative_prompts(wf_negatives, proj_negatives, shot_negatives)
 
-        # 5. Deterministic parameters
+        # 4. Deterministic parameters
         w, h = map_resolution(project_bible.aspect_ratio, quality=quality)
-        fps = shot.fps or project_bible.target_duration or 24
+        fps = shot.fps
         frame_count = max(16, int(round(shot.duration_seconds * fps)))
 
         # Workflow clamping
@@ -149,8 +146,6 @@ class PromptCompiler:
             prompt_language=lang,
             positive_prompt=positive_prompt,
             negative_prompt=negative_prompt,
-            image_prompt=positive_prompt,
-            video_prompt=video_prompt,
             reference_asset_ids=shot.reference_asset_ids,
             seed=seed,
             steps=steps,
@@ -160,7 +155,6 @@ class PromptCompiler:
             frame_count=frame_count,
             fps=fps,
             workflow_id=workflow_profile.get("workflow_id") if workflow_profile else None,
-            unsupported_requirements=[],
         )
 
 prompt_compiler = PromptCompiler()
