@@ -7,3 +7,5 @@ __pycache__/
 projects/
 tests/
 *.md
+node_modules/
+web/dist/
