@@ -17,6 +17,7 @@ from agent.models import (
     AuteurSelection,
     BriefExtraction,
     CreativeBrief,
+    sanitize_brief_dict,
     FilmProductionPack,
     ProjectBible,
     QuestionsResponse,
@@ -114,7 +115,7 @@ class ProjectService:
             brief_data.get("agent_assumptions", []),
         )
         final_brief["agent_assumptions"] = list(dict.fromkeys(assumptions))
-        brief = CreativeBrief(**final_brief)
+        brief = CreativeBrief(**sanitize_brief_dict(final_brief))
         canonical = brief.model_dump()
         self.db.update_project_brief(project_id, canonical, title=brief.title)
         self.db.update_project_status(project_id, "brief_review")
@@ -135,7 +136,9 @@ class ProjectService:
         current: dict[str, Any],
         extraction: BriefExtraction,
     ) -> dict[str, Any]:
-        merged = {**current, **extraction.known}
+        # LLM 的 known 可能带幻觉字段或非法枚举值（如 dialogue_mode="以视觉叙事…"），
+        # 统一过白名单清洗，保证后续 CreativeBrief 校验永不因脏数据崩溃。
+        merged = {**current, **sanitize_brief_dict(extraction.known)}
         assumptions = [*merged.get("agent_assumptions", []), *extraction.assumptions]
         merged["agent_assumptions"] = list(dict.fromkeys(assumptions))
         self.db.update_project_brief(project_id, merged, title=merged.get("title"))
@@ -260,7 +263,7 @@ class ProjectService:
 
         current = dict(project.get("brief", {}))
         current.update(updates)
-        brief = CreativeBrief(**current)
+        brief = CreativeBrief(**sanitize_brief_dict(current))
         self.db.update_project_brief(project_id, brief.model_dump(), title=brief.title)
         self.db.save_artifact(project_id, "creative_brief", brief.model_dump(), status="draft")
         self.db.invalidate_artifacts(project_id, [
@@ -277,7 +280,7 @@ class ProjectService:
             raise ValueError(f"Project {project_id} not found")
 
         data = confirmed_brief or project.get("brief", {})
-        brief = CreativeBrief(**data)
+        brief = CreativeBrief(**sanitize_brief_dict(data))
         self.db.update_project_brief(project_id, brief.model_dump(), title=brief.title)
         self.db.invalidate_artifacts(project_id, [
             "treatments", "selected_treatment", "production_pack", "project_bible",
@@ -296,7 +299,7 @@ class ProjectService:
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
-        brief = CreativeBrief(**project["brief"])
+        brief = CreativeBrief(**sanitize_brief_dict(project["brief"]))
         package = await self.llm.generate_treatments(
             brief,
             self.production_packs.relevant(brief),
@@ -356,7 +359,7 @@ class ProjectService:
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
-        brief = CreativeBrief(**project["brief"])
+        brief = CreativeBrief(**sanitize_brief_dict(project["brief"]))
         treatment_art = self.db.get_latest_artifact(project_id, "selected_treatment")
         treatment = TreatmentOption(**treatment_art["content"]) if treatment_art else None
         screenplay_pkg = await self.llm.build_screenplay(
@@ -392,7 +395,7 @@ class ProjectService:
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
-        brief = CreativeBrief(**project["brief"])
+        brief = CreativeBrief(**sanitize_brief_dict(project["brief"]))
         screenplay_data = self.get_screenplay(project_id)
         if not screenplay_data:
             raise ValueError("Screenplay not found. Please generate screenplay first.")

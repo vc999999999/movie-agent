@@ -19,6 +19,80 @@ ProjectStatus = Literal[
 class StrictBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+
+# LLM 输出字段的白名单清洗：枚举字段不合法值回退默认，多余字段丢弃。
+# 让 brief 合并对真实 LLM 的脏输出（幻觉字段、错误枚举值）保持健壮。
+_BRIEF_ENUM_FALLBACKS: dict[str, tuple[tuple[str, ...], Any]] = {
+    "purpose": (("short_film", "trailer", "ad", "music_video", "social_video"), "trailer"),
+    "platform": (("douyin", "bilibili", "youtube", "other"), "other"),
+    "aspect_ratio": (("16:9", "9:16", "1:1", "2.39:1"), "16:9"),
+    "dialogue_mode": (("none", "voiceover", "dialogue", "mixed"), "voiceover"),
+}
+
+_BRIEF_ALLOWED_FIELDS: frozenset[str] = frozenset([
+    "title", "logline", "purpose", "audience", "platform", "duration_seconds",
+    "aspect_ratio", "genre", "tone", "visual_style", "story_summary",
+    "protagonist", "protagonist_goal", "conflict", "ending", "dialogue_mode",
+    "language", "content_constraints", "user_must_keep", "agent_assumptions",
+])
+
+
+def _map_free_text_to_enum(text: str, allowed: tuple[str, ...], key: str) -> Optional[str]:
+    hints: dict[str, dict[str, tuple[str, ...]]] = {
+        "dialogue_mode": {
+            "none": ("无对白", "纯视觉", "不要对白", "no dialogue"),
+            "voiceover": ("旁白", "视觉叙事", "环境音", "画外音", "voiceover"),
+            "dialogue": ("对白", "角色对白", "对话", "dialogue"),
+            "mixed": ("混合", "both", "mixed"),
+        },
+        "aspect_ratio": {
+            "9:16": ("竖屏", "9:16"),
+            "16:9": ("横屏", "16:9"),
+            "1:1": ("方形", "1:1"),
+            "2.39:1": ("宽银幕", "2.39"),
+        },
+        "platform": {
+            "douyin": ("抖音", "douyin"),
+            "bilibili": ("b站", "bilibili"),
+            "youtube": ("youtube",),
+            "other": ("其他", "other"),
+        },
+        "purpose": {
+            "trailer": ("预告", "trailer"),
+            "short_film": ("短片", "short"),
+            "ad": ("广告", "ad"),
+            "music_video": ("mv", "music"),
+            "social_video": ("社交", "social"),
+        },
+    }
+    table = hints.get(key, {})
+    for candidate in allowed:
+        for hint in table.get(candidate, ()):
+            if hint in text:
+                return candidate
+    return None
+
+
+def sanitize_brief_dict(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize an LLM-written brief dict to fields CreativeBrief accepts."""
+    cleaned: dict[str, Any] = {}
+    for key, value in data.items():
+        if key not in _BRIEF_ALLOWED_FIELDS or value is None:
+            continue
+        if key in _BRIEF_ENUM_FALLBACKS:
+            allowed, fallback = _BRIEF_ENUM_FALLBACKS[key]
+            if value not in allowed:
+                mapped = _map_free_text_to_enum(str(value), allowed, key)
+                value = mapped if mapped else fallback
+        if key == "duration_seconds":
+            try:
+                value = max(10, min(90, int(value)))
+            except (TypeError, ValueError):
+                continue
+        cleaned[key] = value
+    return cleaned
+
+
 # 5.1 CreativeBrief
 class CreativeBrief(StrictBaseModel):
     title: Optional[str] = None
