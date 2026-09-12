@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useReducer, useState, type ReactNode } from "react";
-import type { AiWaitState } from "../components/AiWaitOverlay";
+import type { AiWaitDisplay } from "../components/AiWaitOverlay";
 
 export type DockTaskStatus = "submitted" | "running" | "success" | "failed";
 
@@ -32,8 +32,8 @@ function dockReducer(state: DockTask[], action: DockAction): DockTask[] {
 }
 
 interface ShellContextValue {
-  aiWait: AiWaitState | null;
-  setAiWait: (state: AiWaitState | null) => void;
+  aiWait: AiWaitDisplay | null;
+  setAiWait: (state: AiWaitDisplay | null) => void;
   inspector: ReactNode;
   setInspector: (node: ReactNode) => void;
   inspectorOpen: boolean;
@@ -54,7 +54,7 @@ export function useShell(): ShellContextValue {
 
 export function ShellProvider({ children }: { children: ReactNode }) {
   const [inspector, setInspectorNode] = useState<ReactNode>(null);
-  const [aiWait, setAiWait] = useState<AiWaitState | null>(null);
+  const [aiWait, setAiWait] = useState<AiWaitDisplay | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [dockTasks, dispatch] = useReducer(dockReducer, []);
 
