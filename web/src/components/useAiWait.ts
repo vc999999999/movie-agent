@@ -1,15 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useShell } from "../app/ShellContext";
 import type { AiWaitState } from "./AiWaitOverlay";
 
-export interface AiWaitError {
-  message: string;
-  /** 点击「重新生成」时重跑的操作 */
-  retry: () => void;
-}
-
 interface WithWaitOptions extends AiWaitState {
-  /** 请求失败时自动进入失败态（默认开启）；关闭后维持旧行为只抛错 */
+  /** 请求失败时自动进入失败态（默认开启）；关闭后失败直接收起弹层并抛错 */
   retryable?: boolean;
 }
 
@@ -18,64 +12,45 @@ interface WithWaitOptions extends AiWaitState {
  *   const { withWait } = useAiWait();
  *   withWait({ step: "生成剧本" }, async () => { ... });
  *
- * 请求完成自动收起；失败时弹层切换为失败态，展示错误并给出
- * 「重新生成」按钮，点击即原地重跑同一操作（弹层回到等待态）。
- * 组件卸载时自动收起。
+ * 生命周期全部通过全局 aiWait 驱动：
+ * - 开始：置为等待态
+ * - 成功：收起（setAiWait(null)）
+ * - 失败：保持可见并切换为失败态（error 附在 aiWait 上），「重新生成」原地重跑
+ * - 组件卸载时收起，避免残留
  */
 export function useAiWait() {
   const { setAiWait } = useShell();
-  const [error, setError] = useState<AiWaitError | null>(null);
-  const errorRef = useRef<AiWaitError | null>(null);
 
-  useEffect(() => () => {
-    setAiWait(null);
-    errorRef.current = null;
-  }, [setAiWait]);
-
-  const clearError = useCallback(() => {
-    setError(null);
-    errorRef.current = null;
-  }, []);
-
-  const showError = useCallback(
-    (message: string, retry: () => void) => {
-      const next = { message, retry };
-      errorRef.current = next;
-      setError(next);
-    },
-    [],
-  );
+  useEffect(() => () => setAiWait(null), [setAiWait]);
 
   const withWait = useCallback(
     async <T,>(options: WithWaitOptions, fn: () => Promise<T>): Promise<T> => {
       const { retryable = true, ...state } = options;
       const attempt = async (): Promise<T> => {
         setAiWait(state);
-        clearError();
         try {
-          return await fn();
+          const result = await fn();
+          setAiWait(null);
+          return result;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           if (retryable) {
-            showError(message || "请求失败", () => {
+            const retry = () => {
               void attempt().catch(() => {
-                /* 失败态已由内层 showError 呈现 */
+                /* 失败态已由内层呈现 */
               });
-            });
+            };
+            setAiWait({ ...state, error: { message: message || "请求失败", retry } });
+          } else {
+            setAiWait(null);
           }
           throw err;
         }
       };
-      try {
-        return await attempt();
-      } catch (err) {
-        if (!retryable) throw err;
-        // 吞掉异常：失败已通过弹层呈现，调用方的 .catch 仍可执行（toast 等）
-        throw err;
-      }
+      return attempt();
     },
-    [setAiWait, clearError, showError],
+    [setAiWait],
   );
 
-  return { withWait, error, clearError };
+  return { withWait };
 }
