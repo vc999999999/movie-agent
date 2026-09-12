@@ -229,6 +229,12 @@ class LLMService:
                 return fallback_fn()
             raise RuntimeError("OPENAI_API_KEY is not set (set LLM_MOCK_MODE=true only for local demos/tests)")
 
+        # Send the actual schema; naming a Python model is insufficient for the LLM.
+        system_prompt += (
+            "\n\nRequired JSON Schema (include all required fields exactly as named):\n"
+            + json.dumps(schema_cls.model_json_schema(), ensure_ascii=False)
+        )
+
         # First attempt
         content = await self.call_llm(system_prompt, user_prompt)
         raw_json = extract_json_block(content)
@@ -242,6 +248,7 @@ class LLMService:
             # Repair call
             repair_prompt = (
                 f"Your previous output failed JSON validation or schema check:\nError: {e}\n\n"
+                f"Original task and constraints:\n{user_prompt}\n\n"
                 f"Previous output:\n{content}\n\n"
                 f"Please fix and output ONLY the valid JSON object conforming to the required schema."
             )
