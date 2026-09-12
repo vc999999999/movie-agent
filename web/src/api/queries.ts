@@ -7,7 +7,6 @@ import type {
   CreateProjectResponse,
   CreativeBrief,
   PackagesResponse,
-  ProductionPack,
   Project,
   ProjectDetailResponse,
   QuestionsResponse,
@@ -75,15 +74,6 @@ export function useAuteurContext(projectId: string | null, enabled: boolean) {
     queryFn: () => apiJson<AuteurContext>(`/api/projects/${encodeSeg(projectId!)}/auteur-profile`),
     enabled: projectId !== null && enabled,
     retry: false,
-  });
-}
-
-export function useProductionPacks() {
-  return useQuery({
-    queryKey: queryKeys.productionPacks,
-    queryFn: () => apiJson<ProductionPack[]>("/api/production-packs"),
-    staleTime: Infinity,
-    retry: 1,
   });
 }
 
@@ -178,22 +168,6 @@ export function useCreateProject() {
   });
 }
 
-export function useSendMessage(projectId: string) {
-  const inv = useInvalidator();
-  return useMutation({
-    mutationFn: (content: string) =>
-      apiJson<QuestionsResponse>(`/api/projects/${encodeSeg(projectId)}/messages`, {
-        method: "POST",
-        body: { content },
-      }),
-    onSuccess: (data) => {
-      inv.invalidateProject(projectId);
-      void inv;
-      return data;
-    },
-  });
-}
-
 export function useSubmitAnswers(projectId: string) {
   const inv = useInvalidator();
   const qc = useQueryClient();
@@ -206,21 +180,6 @@ export function useSubmitAnswers(projectId: string) {
     onSuccess: (data) => {
       qc.setQueryData(queryKeys.questions(projectId), data);
       inv.invalidateProject(projectId);
-    },
-  });
-}
-
-export function useUpdateBrief(projectId: string) {
-  const inv = useInvalidator();
-  return useMutation({
-    mutationFn: (updates: Partial<CreativeBrief>) =>
-      apiJson<CreativeBrief>(`/api/projects/${encodeSeg(projectId)}/brief`, {
-        method: "PATCH",
-        body: { updates },
-      }),
-    onSuccess: () => {
-      inv.invalidateProject(projectId);
-      inv.invalidateDownstream(projectId);
     },
   });
 }
@@ -293,31 +252,6 @@ export function useConfirmTreatment(projectId: string) {
     onSuccess: () => {
       inv.invalidateProject(projectId);
       inv.invalidateFromTreatment(projectId);
-    },
-  });
-}
-
-export function useGenerateScreenplay(projectId: string) {
-  const inv = useInvalidator();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      apiJson<ScreenplayPackage>(`/api/projects/${encodeSeg(projectId)}/screenplay/generate`, { method: "POST" }),
-    onSuccess: (data) => {
-      qc.setQueryData(queryKeys.screenplay(projectId), data);
-      inv.invalidateProject(projectId);
-    },
-  });
-}
-
-export function useGenerateShots(projectId: string) {
-  const inv = useInvalidator();
-  return useMutation({
-    mutationFn: () =>
-      apiJson<ShotSpec[]>(`/api/projects/${encodeSeg(projectId)}/shots/generate`, { method: "POST" }),
-    onSuccess: () => {
-      inv.invalidateProject(projectId);
-      inv.invalidateFromShot(projectId);
     },
   });
 }

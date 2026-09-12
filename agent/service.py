@@ -846,14 +846,7 @@ class ProjectService:
     # yielding per-step progress for the frontend "generation chain" UI.
     PIPELINE_STEPS = ["treatments", "treatment_choice", "screenplay", "shots", "packages", "render", "rough_cut"]
 
-    def pipeline_state(self, project_id: str) -> dict[str, Any]:
-        runs = self.db.list_render_runs(project_id) if hasattr(self.db, "list_render_runs") else []
-        return {
-            "project_id": project_id,
-            "steps": self.PIPELINE_STEPS,
-        }
-
-    async def run_auto_pipeline(self, project_id: str, treatment_id: Optional[str] = None) -> dict[str, Any]:
+    async def run_auto_pipeline(self, project_id: str) -> dict[str, Any]:
         """Execute the full generation chain from the current project state.
 
         Starts at whichever step is next for the project's status; reuses

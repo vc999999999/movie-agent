@@ -25,7 +25,6 @@ class ComfyUIClient:
         self.port = port or settings.comfyui_port
         self.client_id = client_id or str(uuid.uuid4())
         self.base_url = f"http://{self.host}:{self.port}"
-        self.ws_url = f"ws://{self.host}:{self.port}/ws?clientId={self.client_id}"
         self.mock_mode = mock_mode if mock_mode is not None else settings.comfyui_mock_mode
 
     async def get_object_info(self) -> dict[str, Any]:

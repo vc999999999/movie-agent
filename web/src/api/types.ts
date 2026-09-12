@@ -327,11 +327,3 @@ export interface ProjectDetailResponse {
   messages: Message[];
 }
 
-export interface ProductionPack {
-  pack_id: string;
-  version: string;
-  name: string;
-  genres: string[];
-  keywords: string[];
-  [key: string]: unknown;
-}

@@ -26,10 +26,6 @@ export const STAGES: StageDef[] = [
   { id: "preview", index: 6, label: "粗剪预览", short: "粗剪" },
 ];
 
-export const STAGE_BY_ID: Record<StageId, StageDef> = Object.fromEntries(
-  STAGES.map((s) => [s.id, s]),
-) as Record<StageId, StageDef>;
-
 // Backend status -> furthest reachable stage (方案 §3 映射)
 export function maxStageIndex(status: ProjectStatus): number {
   switch (status) {
