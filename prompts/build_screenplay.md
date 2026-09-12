@@ -13,3 +13,11 @@
 
 ## 输出格式：
 必须返回合规 JSON，包含 project_bible 和 scenes。
+
+## 字段约束（必须严格遵守）：
+- project_bible.genre 必须是字符串数组，如 ["科幻", "悬疑"]；绝不能是单个字符串。
+- project_bible.characters[] 每项必填：character_id, name, narrative_role, fixed_appearance, fixed_costume。
+- project_bible.locations[] 每项必填：location_id, name, fixed_visual_description。
+- scenes[] 每项必填：scene_id, order, heading, location_id, time_of_day（如"黄昏"/"深夜"）, estimated_duration, purpose, characters, setup, action_beats（字符串数组）。
+- 不要输出 schema 之外的任何字段（例如 setting、notes 等）。
+- estimated_duration 总和必须等于简报的 duration_seconds。

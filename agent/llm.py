@@ -43,6 +43,45 @@ def extract_json_block(text: str) -> str:
         return text[first_brace:last_brace + 1]
     return text
 
+def coerce_to_schema(schema_cls: Type[T], data: Any) -> Any:
+    """递归归一化 LLM 输出，使其满足 pydantic schema：
+
+    - 缺失字段：若模型定义了默认值则自动补齐（如 SceneSpec.time_of_day）
+    - 列表字段收到字符串：按分隔符拆分或包成单元素列表（如 genre="Neo-Noir" → ["Neo-Noir"]）
+    - 多余字段：丢弃（配合 extra="forbid"）
+    """
+    if not isinstance(schema_cls, type) or not issubclass(schema_cls, BaseModel):
+        return data
+    if not isinstance(data, dict):
+        return data
+
+    fields = schema_cls.model_fields
+    cleaned: dict[str, Any] = {}
+    for name, field_info in fields.items():
+        if name not in data or data[name] is None:
+            # 缺字段：有默认值就留给 pydantic 填充，必填字段仍然报错
+            continue
+        value = data[name]
+        annotation = field_info.annotation
+        # list[str] 收到字符串 → 拆分/包裹
+        origin = getattr(annotation, "__origin__", None)
+        if origin is list and isinstance(value, str):
+            item_type = annotation.__args__[0] if getattr(annotation, "__args__", None) else str
+            if item_type is str:
+                value = [p.strip() for p in re.split(r"[,，;；、/]", value) if p.strip()] or [value.strip()]
+        # dict[str, X] 以外的嵌套模型递归
+        if origin is None and isinstance(annotation, type) and issubclass(annotation, BaseModel) and isinstance(value, (dict, list)):
+            if isinstance(value, dict):
+                value = coerce_to_schema(annotation, value)
+        elif origin is list:
+            args = getattr(annotation, "__args__", (None,))
+            item_type = args[0]
+            if isinstance(item_type, type) and issubclass(item_type, BaseModel) and isinstance(value, list):
+                value = [coerce_to_schema(item_type, item) if isinstance(item, dict) else item for item in value]
+        cleaned[name] = value
+    return cleaned
+
+
 class LLMService:
     def __init__(
         self,
@@ -128,7 +167,7 @@ class LLMService:
 
         try:
             parsed = json.loads(raw_json)
-            return schema_cls.model_validate(parsed)
+            return schema_cls.model_validate(coerce_to_schema(schema_cls, parsed))
         except (json.JSONDecodeError, ValidationError) as e:
             logger.warning(f"Initial LLM response validation failed: {e}. Attempting 1 repair call...")
 
@@ -142,7 +181,7 @@ class LLMService:
                 repair_content = await self.call_llm(system_prompt, repair_prompt)
                 repair_json = extract_json_block(repair_content)
                 parsed = json.loads(repair_json)
-                return schema_cls.model_validate(parsed)
+                return schema_cls.model_validate(coerce_to_schema(schema_cls, parsed))
             except Exception as repair_err:
                 logger.error(f"Repair call also failed: {repair_err}")
                 if settings.llm_mock_mode and fallback_fn:

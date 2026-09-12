@@ -168,7 +168,7 @@ class SceneSpec(StrictBaseModel):
     order: int
     heading: str
     location_id: str
-    time_of_day: str
+    time_of_day: str = "未指定"
     estimated_duration: float
     purpose: str
     characters: list[str]
