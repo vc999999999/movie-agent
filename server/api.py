@@ -277,6 +277,15 @@ async def download_patched_workflow(project_id: str, shot_id: str):
     return FileResponse(path=str(file_path), filename=f"{shot_id}_workflow.json", media_type="application/json")
 
 # Render & Execution
+@router.post("/projects/{project_id}/auto_pipeline", summary="生成集：从当前状态一键跑完 剩余全部生成步骤")
+async def auto_pipeline(project_id: str):
+    try:
+        return await project_service.run_auto_pipeline(project_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
 @router.post("/shots/{shot_id}/render", summary="执行单个镜头渲染 (ComfyUI / 仿真)")
 async def render_shot(shot_id: str, req: RenderShotRequest):
     try:

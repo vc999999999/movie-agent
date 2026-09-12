@@ -842,4 +842,105 @@ class ProjectService:
             raise ValueError("Workflow path is outside the project directory")
         return candidate
 
+    # Generation Pipeline: run every remaining production step in order,
+    # yielding per-step progress for the frontend "generation chain" UI.
+    PIPELINE_STEPS = ["treatments", "treatment_choice", "screenplay", "shots", "packages", "render", "rough_cut"]
+
+    def pipeline_state(self, project_id: str) -> dict[str, Any]:
+        runs = self.db.list_render_runs(project_id) if hasattr(self.db, "list_render_runs") else []
+        return {
+            "project_id": project_id,
+            "steps": self.PIPELINE_STEPS,
+        }
+
+    async def run_auto_pipeline(self, project_id: str, treatment_id: Optional[str] = None) -> dict[str, Any]:
+        """Execute the full generation chain from the current project state.
+
+        Starts at whichever step is next for the project's status; reuses
+        existing artifacts when they are already present. Returns a step log.
+        """
+        project = self.db.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+
+        log: list[dict[str, Any]] = []
+
+        def record(step: str, status: str, detail: Any = None, error: Optional[str] = None) -> None:
+            entry: dict[str, Any] = {"step": step, "status": status}
+            if detail is not None:
+                entry["detail"] = detail
+            if error:
+                entry["error"] = error
+            log.append(entry)
+
+        async def run_step(step: str, fn, detail_fn=None):
+            record(step, "running")
+            try:
+                result = await fn() if asyncio.iscoroutinefunction(fn) else fn()
+                record(step, "done", detail_fn(result) if detail_fn else None)
+                return result
+            except Exception as e:
+                record(step, "failed", error=str(e)[:500])
+                raise
+
+        status = project["status"]
+
+        # 1-2. Treatments (only needed before one has been confirmed)
+        selected_pack = self.db.get_latest_artifact(project_id, "selected_treatment")
+        if status in ("brief_review",) and not selected_pack:
+            package = await run_step(
+                "treatments", lambda: self.generate_treatments(project_id),
+                lambda p: f"{len(p.options)} 个方案",
+            )
+            # Auto-pick the recommended treatment
+            await run_step(
+                "treatment_choice",
+                lambda: self.confirm_treatment(project_id, package.recommendation),
+                lambda opt: opt.title,
+            )
+
+        # 3. Screenplay (confirm_brief / confirm_treatment already trigger it;
+        #    run explicitly when the artifact is missing)
+        if not self.db.get_latest_artifact(project_id, "screenplay"):
+            await run_step("screenplay", lambda: self.generate_screenplay(project_id))
+        else:
+            record("screenplay", "done", detail="已有剧本，跳过")
+
+        # 4. Shots
+        shots = self.get_shots(project_id)
+        if not shots:
+            shots = await run_step("shots", lambda: self.generate_shots(project_id))
+        else:
+            record("shots", "done", detail=f"已有 {len(shots)} 个镜头，跳过")
+
+        # 5. Prompt packages & workflow patching
+        packages = self.get_packages(project_id)
+        if not packages.get("prompt_packages"):
+            await run_step(
+                "packages", lambda: self.compile_packages(project_id),
+                lambda p: f"{len(p.get('prompt_packages', []))} 个镜头包",
+            )
+        else:
+            record("packages", "done", detail="已编译，跳过")
+
+        # 6. Render every shot sequentially
+        runs = await run_step(
+            "render", lambda: self.render_all_shots(project_id),
+            lambda rs: f"{sum(1 for r in rs if r.status == 'success')}/{len(rs)} 成功",
+        )
+        failed = [r for r in runs if r.status != "success"]
+        if failed:
+            raise RuntimeError(
+                "镜头渲染失败: "
+                + ", ".join(
+                    f"{r.shot_id}({(r.error_json or {}).get('message', '未知错误')})"
+                    for r in failed
+                )
+            )
+
+        # 7. Rough cut
+        await run_step("rough_cut", lambda: self.create_rough_cut(project_id))
+
+        return {"project_id": project_id, "steps": log, "status": "completed"}
+
 project_service = ProjectService()

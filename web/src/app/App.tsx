@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useProject } from "../api/queries";
 import { ErrorNotice } from "../components/ErrorNotice";
+import { onNextStageEvent } from "../components/nextStage";
 import { useShell } from "./ShellContext";
 import { STAGES, maxStageIndex, type StageId } from "./stages";
 import { StudioShell } from "./StudioShell";
@@ -45,6 +46,12 @@ function StageView({ stage, projectId }: { stage: StageId; projectId: string }) 
 export default function App() {
   const [{ projectId, stage }, setUrl] = useUrlState();
   const projectQuery = useProject(projectId);
+
+  // 「下一步」引导按钮的跨阶段跳转
+  useEffect(
+    () => onNextStageEvent((target) => setUrl({ stage: target })),
+    [setUrl],
+  );
 
   const project = projectQuery.data?.project ?? null;
   const maxIdx = project ? maxStageIndex(project.status) : 0;

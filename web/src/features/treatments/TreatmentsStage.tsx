@@ -9,7 +9,9 @@ import type { TreatmentOption } from "../../api/types";
 import { Button } from "../../components/Button";
 import { Dialog } from "../../components/Dialog";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { StageFooter } from "../../components/StageFooter";
 import { StatusBadge } from "../../components/StatusBadge";
+import { useNextStage } from "../../components/nextStage";
 import { useToast } from "../../components/Toast";
 import { useInspector } from "../../app/App";
 
@@ -93,6 +95,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
   const [diffOnly, setDiffOnly] = useState(false);
   const [pendingOption, setPendingOption] = useState<TreatmentOption | null>(null);
   const { toast } = useToast();
+  const onNextStage = useNextStage("treatments");
 
   const pkg = treatmentsQuery.data ?? null;
   const hasTreatments = pkg !== null && pkg.options.length > 0;
@@ -219,6 +222,13 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
           </Button>
         </div>
       ) : null}
+
+      <StageFooter
+        done={alreadyConfirmed}
+        hasNext
+        nextLabel="剧本圣经"
+        onNext={onNextStage}
+      />
 
       <Dialog open={pendingOption !== null} onClose={() => setPendingOption(null)} title="确认导演方案">
         {pendingOption ? (

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { useConfirmShots, useShots, useUpdateShot } from "../../api/queries";
+import { useConfirmShots, useProject, useShots, useUpdateShot } from "../../api/queries";
 import type { ContinuityIssue, GrammarIssue, ShotSize, ShotSpec } from "../../api/types";
 import { Button } from "../../components/Button";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { StageFooter } from "../../components/StageFooter";
 import { StatusBadge } from "../../components/StatusBadge";
+import { useNextStage } from "../../components/nextStage";
 import { useToast } from "../../components/Toast";
 import { useInspector } from "../../app/App";
 
@@ -311,6 +313,11 @@ export function StoryboardStage({ projectId }: { projectId: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const { toast } = useToast();
+  const onNextStage = useNextStage("storyboard");
+  const projectQuery = useProject(projectId);
+  const confirmed = projectQuery.data
+    ? ["package_ready", "rendering", "completed", "failed"].includes(projectQuery.data.project.status)
+    : false;
 
   const data = shotsQuery.data ?? null;
   const shots = useMemo(() => data?.shots ?? [], [data]);
@@ -467,6 +474,13 @@ export function StoryboardStage({ projectId }: { projectId: string }) {
           />
         ) : null}
       </AnimatePresence>
+
+      <StageFooter
+        done={confirmed && errorCount === 0}
+        hasNext
+        nextLabel="生成工作台"
+        onNext={onNextStage}
+      />
     </div>
   );
 }

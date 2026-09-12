@@ -8,6 +8,7 @@ import {
 import type { CreativeBrief, QuestionItem } from "../../api/types";
 import { Button } from "../../components/Button";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { GenerationChain, useAutoPipeline, type PipelineStepLog } from "../../components/GenerationChain";
 import { useToast } from "../../components/Toast";
 import { useInspector } from "../../app/App";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -74,6 +75,8 @@ const DIALOGUE_OPTIONS = [
 function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeBrief }) {
   const [form, setForm] = useState<CreativeBrief>(brief);
   const confirmBrief = useConfirmBrief(projectId);
+  const autoPipeline = useAutoPipeline(projectId);
+  const [chainLog, setChainLog] = useState<PipelineStepLog[]>([]);
   const { toast } = useToast();
 
   useEffect(() => setForm(brief), [brief]);
@@ -107,8 +110,31 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
     });
   };
 
+  const startChain = () => {
+    if (autoPipeline.isPending) return;
+    setChainLog([]);
+    autoPipeline.mutate(undefined, {
+      onSuccess: (res) => {
+        setChainLog(res.steps);
+        toast("全自动生成完成，已可预览粗剪", "success");
+      },
+      onError: (err) => {
+        setChainLog((prev) =>
+          prev.length > 0
+            ? prev.map((s, i) => (i === prev.length - 1 ? { ...s, status: "failed", error: err.message } : s))
+            : [{ step: "pipeline", status: "failed", error: err.message }],
+        );
+        toast("生成集执行失败：" + err.message, "error");
+      },
+    });
+  };
+
+  // 生成集在简报确认（下游产物已生成）后才可用
+  const projectStatusReady = chainLog.length > 0 || autoPipeline.isPending || confirmBrief.isSuccess;
+
   return (
-    <div className="card" style={{ padding: 22, display: "grid", gap: 16, maxWidth: 720 }}>
+    <div style={{ display: "grid", gap: 16, maxWidth: 760 }}>
+    <div className="card" style={{ padding: 22, display: "grid", gap: 16 }}>
       <h2 className="display" style={{ fontSize: 20 }}>创作简报审阅</h2>
       <p className="text-secondary" style={{ fontSize: 13 }}>
         确认后 Agent 将锁定创作设定并生成剧本与分镜。上游修改会使下游产物失效。
@@ -171,6 +197,15 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
           {confirmBrief.isPending ? "正在生成剧本与分镜…" : "确认简报并生成剧本"}
         </Button>
       </div>
+    </div>
+
+    {projectStatusReady ? (
+      <GenerationChain
+        running={autoPipeline.isPending}
+        log={chainLog}
+        onStart={startChain}
+      />
+    ) : null}
     </div>
   );
 }
