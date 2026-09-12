@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # 4.1 Project Status
 ProjectStatus = Literal[
@@ -355,11 +355,35 @@ class ContinuityIssue(StrictBaseModel):
     suggested_fix: str
 
 # 6. Extraction & Questions
+def _coerce_conflicts(value: Any) -> list[str]:
+    """LLM 常把 conflicts 写成 [{field, message, severity}, ...]，压平为字符串列表。"""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict):
+            text = "；".join(
+                str(v) for k, v in item.items() if k != "severity" and v
+            )
+            if text:
+                out.append(text)
+    return out
+
+
 class BriefExtraction(StrictBaseModel):
     known: dict[str, Any] = Field(default_factory=dict)
     conflicts: list[str] = Field(default_factory=list)
     confidence: dict[str, float] = Field(default_factory=dict)
     assumptions: list[str] = Field(default_factory=list)
+
+    @field_validator("conflicts", mode="before")
+    @classmethod
+    def _flatten_conflicts(cls, v: Any) -> Any:
+        if isinstance(v, list) and any(isinstance(i, dict) for i in v):
+            return _coerce_conflicts(v)
+        return v
 
 class QuestionItem(StrictBaseModel):
     question_id: str
