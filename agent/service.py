@@ -435,7 +435,7 @@ class ProjectService:
         tolerance = target_dur * 0.05
         if abs(total_dur - target_dur) > tolerance:
             raise ValueError(
-                f"Shot duration total {total_dur:.1f}s exceeds the 5% tolerance for {target_dur}s"
+                f"分镜总时长 {total_dur:.1f} 秒与目标 {target_dur} 秒不符（允许误差 ±{tolerance:.1f} 秒），请重新生成分镜"
             )
 
         # Continuity check

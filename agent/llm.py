@@ -544,6 +544,29 @@ class LLMService:
         if auteur:
             user_prompt += f"\n\nSelected Auteur Technique Context:\n{auteur.model_dump_json(indent=2)}"
 
+        # Timing is a production constraint, not an LLM arithmetic task.
+        max_duration = min(12.0, pack.generation_recipe.max_duration_seconds if pack else 8.0)
+        shot_count = max(3, math.ceil(brief.duration_seconds / min(4.5, max_duration)))
+        total_ms = brief.duration_seconds * 1000
+        base_ms, remainder = divmod(total_ms, shot_count)
+        durations = [(base_ms + (1 if i < remainder else 0)) / 1000 for i in range(shot_count)]
+        timing_prompt = (
+            f"\n\nMandatory shot timing plan: exactly {shot_count} shots, in order. "
+            f"duration_seconds for each shot: {json.dumps(durations)}. "
+            f"Total: {brief.duration_seconds}s; maximum per shot: {max_duration}s. "
+            "Design the action to fit each assigned slot. Do not omit, merge, or add slots. "
+            "This timing plan overrides generic duration advice."
+        )
+        user_prompt += f"\n\nComplete Creative Brief:\n{brief.model_dump_json(indent=2)}" + timing_prompt
+        if pack:
+            user_prompt += (
+                f"\nEvery grammar_pack_id must be {pack.pack_id!r} (the pack_id, not grammar_id). "
+                "sequence_pattern is a key from directing_grammar.sequence_patterns; "
+                "shot_function must be one of the values belonging to that key. "
+                "For the selected first-frame I2V workflow, set first_frame_required=true "
+                "and last_frame_required=false; end_frame describes the intended ending, not a required input image."
+            )
+
         class ShotListWrapper(BaseModel):
             shots: list[ShotSpec]
 
@@ -666,6 +689,16 @@ class LLMService:
             return shots
 
         res = await self.structured_call(system_prompt, user_prompt, ShotListWrapper, fallback_fn=lambda: ShotListWrapper(shots=fallback()))
-        return res.shots
+        if len(res.shots) != shot_count:
+            repair_prompt = (
+                user_prompt + f"\nPrevious response contained {len(res.shots)} shots instead of {shot_count}. "
+                "Replan the action across every assigned slot, preserving the brief and selected treatment.\n"
+                + res.model_dump_json()
+            )
+            res = await self.structured_call(system_prompt, repair_prompt, ShotListWrapper, fallback_fn=lambda: ShotListWrapper(shots=fallback()))
+        if len(res.shots) != shot_count:
+            raise ValueError(f"分镜需要 {shot_count} 个镜头以满足 {brief.duration_seconds} 秒和单镜头上限，模型修复后仍返回 {len(res.shots)} 个，请重试生成")
+        # The model has authored against these slots; persist the exact production timing.
+        return [shot.model_copy(update={"duration_seconds": duration}) for shot, duration in zip(res.shots, durations)]
 
 llm_service = LLMService()
