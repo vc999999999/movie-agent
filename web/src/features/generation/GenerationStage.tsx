@@ -8,8 +8,10 @@ import {
   useRenderShot,
 } from "../../api/queries";
 import type { PackagesResponse, ShotPrompt, WorkflowPlan } from "../../api/types";
+import type { StageId } from "../../app/stages";
 import { Button } from "../../components/Button";
 import { ErrorNotice } from "../../components/ErrorNotice";
+import { PipelineSwarm, usePipelineStatus } from "../../components/PipelineSwarm";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useToast } from "../../components/Toast";
 import { useInspector } from "../../app/App";
@@ -181,6 +183,7 @@ export function GenerationStage({ projectId }: { projectId: string }) {
   const packagesQuery = usePackages(projectId, true);
   const compilePackages = useCompilePackages(projectId);
   const renderAll = useRenderAll(projectId);
+  const pipeline = usePipelineStatus(projectId);
   const { addDockTask, updateDockTask } = useShell();
   const { toast } = useToast();
 
@@ -189,6 +192,17 @@ export function GenerationStage({ projectId }: { projectId: string }) {
   const plans = data?.workflow_plans ?? [];
   const planByShot = new Map(plans.map((p) => [p.shot_id, p]));
   const matchedCount = plans.filter((p) => p.status === "matched").length;
+  const shotIds = pkgs.map((p) => p.shot_id);
+  const shotTitles = new Map(pkgs.map((p) => [p.shot_id, `${p.width}×${p.height}`]));
+
+  const navigateStage = (stage: StageId) =>
+    window.dispatchEvent(new CustomEvent("movie-agent:navigate-stage", { detail: stage }));
+
+  const startPipeline = () => {
+    fetch(`/api/projects/${encodeSeg(projectId)}/auto_pipeline`, { method: "POST" })
+      .then(() => void pipeline.refetch())
+      .catch(() => toast("启动生成集失败", "error"));
+  };
 
   useInspector(
     <div style={{ display: "grid", gap: 12 }}>
@@ -219,6 +233,7 @@ export function GenerationStage({ projectId }: { projectId: string }) {
         updateDockTask(taskId, failed > 0 ? "failed" : "success", `${runs.length - failed}/${runs.length} 成功`);
         toast(failed > 0 ? `批量渲染完成，${failed} 个失败` : "批量渲染全部成功", failed > 0 ? "error" : "success");
         void packagesQuery.refetch();
+        void pipeline.refetch();
       },
       onError: (err) => {
         updateDockTask(taskId, "failed", err.message);
@@ -233,18 +248,27 @@ export function GenerationStage({ projectId }: { projectId: string }) {
 
   if (packagesQuery.isError || !data || pkgs.length === 0) {
     return (
-      <div className="card" style={{ padding: 24, display: "grid", gap: 12, maxWidth: 520 }}>
-        <h2 className="display" style={{ fontSize: 20 }}>生成工作台</h2>
-        <p className="text-secondary" style={{ fontSize: 13 }}>
-          还没有编译好的 Prompt 包。确认镜头表后，在此编译工作流参数。
-        </p>
-        {compilePackages.isError ? (
-          <ErrorNotice title="编译生成包失败" error={compilePackages.error} />
-        ) : null}
-        <div>
-          <Button variant="primary" onClick={() => compilePackages.mutate()} disabled={compilePackages.isPending}>
-            {compilePackages.isPending ? "正在编译…" : "编译 Prompt 包与工作流"}
-          </Button>
+      <div style={{ display: "grid", gap: 16 }}>
+        <PipelineSwarm
+          projectId={projectId}
+          shotIds={shotIds}
+          shotTitles={shotTitles}
+          onNavigate={navigateStage}
+          onStart={startPipeline}
+        />
+        <div className="card" style={{ padding: 24, display: "grid", gap: 12, maxWidth: 520 }}>
+          <h2 className="display" style={{ fontSize: 20 }}>生成工作台</h2>
+          <p className="text-secondary" style={{ fontSize: 13 }}>
+            还没有编译好的 Prompt 包。确认镜头表后，在此编译工作流参数。
+          </p>
+          {compilePackages.isError ? (
+            <ErrorNotice title="编译生成包失败" error={compilePackages.error} />
+          ) : null}
+          <div>
+            <Button variant="primary" onClick={() => compilePackages.mutate()} disabled={compilePackages.isPending}>
+              {compilePackages.isPending ? "正在编译…" : "编译 Prompt 包与工作流"}
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -252,6 +276,14 @@ export function GenerationStage({ projectId }: { projectId: string }) {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <PipelineSwarm
+        projectId={projectId}
+        shotIds={shotIds}
+        shotTitles={shotTitles}
+        onNavigate={navigateStage}
+        onStart={startPipeline}
+      />
+
       <header style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
         <div>
           <h2 className="display" style={{ fontSize: 22 }}>生成工作台</h2>

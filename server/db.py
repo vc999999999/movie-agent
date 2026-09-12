@@ -271,4 +271,20 @@ class Database:
             result["error_json"] = json.loads(result["error_json"]) if result.get("error_json") else None
             return result
 
+    def list_render_runs(self, project_id: str) -> list[dict[str, Any]]:
+        """All render runs of a project, newest first."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM render_runs WHERE project_id = ? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+            results = []
+            for row in rows:
+                item = dict(row)
+                item["request_json"] = json.loads(item["request_json"])
+                item["output_json"] = json.loads(item["output_json"]) if item.get("output_json") else None
+                item["error_json"] = json.loads(item["error_json"]) if item.get("error_json") else None
+                results.append(item)
+            return results
+
 db = Database()

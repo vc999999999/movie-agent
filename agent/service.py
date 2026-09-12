@@ -872,11 +872,19 @@ class ProjectService:
             if error:
                 entry["error"] = error
             log.append(entry)
+            # Mirror into the shared progress state for polling UIs;
+            # create the slot lazily so direct run_auto_pipeline callers work too
+            state = self._pipeline_progress.setdefault(
+                project_id, {"steps": [], "status": "running", "error": None}
+            )
+            state["steps"] = list(log)
 
         async def run_step(step: str, fn, detail_fn=None):
             record(step, "running")
             try:
-                result = await fn() if asyncio.iscoroutinefunction(fn) else fn()
+                outcome = fn()
+                # Lambdas wrapping async methods return coroutines; await them.
+                result = await outcome if asyncio.iscoroutine(outcome) else outcome
                 record(step, "done", detail_fn(result) if detail_fn else None)
                 return result
             except Exception as e:
@@ -885,9 +893,11 @@ class ProjectService:
 
         status = project["status"]
 
-        # 1-2. Treatments (only needed before one has been confirmed)
+        # 1-2. Treatments (only needed before one has been confirmed).
+        # confirm_brief jumps straight to screenplay_ready, so rely on the
+        # selected_treatment artifact rather than the status alone.
         selected_pack = self.db.get_latest_artifact(project_id, "selected_treatment")
-        if status in ("brief_review",) and not selected_pack:
+        if not selected_pack:
             package = await run_step(
                 "treatments", lambda: self.generate_treatments(project_id),
                 lambda p: f"{len(p.options)} 个方案",
@@ -896,8 +906,11 @@ class ProjectService:
             await run_step(
                 "treatment_choice",
                 lambda: self.confirm_treatment(project_id, package.recommendation),
-                lambda opt: opt.title,
+                lambda opt: opt.name,
             )
+        else:
+            record("treatments", "done", detail="已有导演方案，跳过")
+            record("treatment_choice", "done", detail="方案已确认，跳过")
 
         # 3. Screenplay (confirm_brief / confirm_treatment already trigger it;
         #    run explicitly when the artifact is missing)
@@ -942,5 +955,78 @@ class ProjectService:
         await run_step("rough_cut", lambda: self.create_rough_cut(project_id))
 
         return {"project_id": project_id, "steps": log, "status": "completed"}
+
+    # Background pipeline execution + orchestration-view state.
+    _pipeline_progress: dict[str, dict[str, Any]] = {}
+    _pipeline_tasks: dict[str, asyncio.Task] = {}
+
+    def start_auto_pipeline(self, project_id: str) -> dict[str, Any]:
+        """Start the auto pipeline as a background task (idempotent)."""
+        project = self.db.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+
+        existing = self._pipeline_tasks.get(project_id)
+        if existing and not existing.done():
+            return {"project_id": project_id, "status": "running", "message": "生成集已在进行中"}
+
+        self._pipeline_progress[project_id] = {"steps": [], "status": "running", "error": None}
+
+        async def runner() -> None:
+            state = self._pipeline_progress[project_id]
+            try:
+                await self.run_auto_pipeline(project_id)
+                state["status"] = "completed"
+            except Exception as e:
+                state["status"] = "failed"
+                state["error"] = str(e)[:500]
+
+        self._pipeline_tasks[project_id] = asyncio.create_task(runner())
+        return {"project_id": project_id, "status": "running"}
+
+    def get_pipeline_status(self, project_id: str) -> dict[str, Any]:
+        """Orchestration view state: step log + per-shot render status."""
+        project = self.db.get_project(project_id)
+        if not project:
+            raise ValueError(f"Project {project_id} not found")
+
+        progress = self._pipeline_progress.get(project_id, {"steps": [], "status": "idle", "error": None})
+
+        # Latest run per shot (list_render_runs is newest-first)
+        latest_by_shot: dict[str, dict[str, Any]] = {}
+        for run in self.db.list_render_runs(project_id):
+            latest_by_shot.setdefault(run["shot_id"], run)
+        shots = [
+            {
+                "shot_id": shot_id,
+                "status": run["status"],
+                "error": (run.get("error_json") or {}).get("message"),
+            }
+            for shot_id, run in latest_by_shot.items()
+        ]
+
+        # Artifact presence so idle states still show completed waves
+        artifacts = {
+            "brief": bool(project.get("brief")),
+            "treatments": bool(self.db.get_latest_artifact(project_id, "treatments")),
+            "screenplay": bool(self.db.get_latest_artifact(project_id, "screenplay")),
+            "shots": len(self.get_shots(project_id)) > 0,
+            "packages": bool(self.get_packages(project_id).get("prompt_packages")),
+            "rough_cut": bool(self.db.get_latest_artifact(project_id, "rough_cut")),
+        }
+        # Render status from artifacts/runs even when not running via pipeline
+        shot_list = self.get_shots(project_id)
+        if progress["status"] == "idle" and artifacts["rough_cut"]:
+            render_done = all(latest_by_shot.get(s["shot_id"], {}).get("status") == "success" for s in shot_list)
+            if render_done and shot_list:
+                progress["status"] = "completed"
+
+        return {
+            "project_id": project_id,
+            "project_status": project["status"],
+            "pipeline": progress,
+            "shots": shots,
+            "artifacts": artifacts,
+        }
 
 project_service = ProjectService()
