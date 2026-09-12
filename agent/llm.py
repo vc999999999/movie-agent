@@ -5,7 +5,7 @@ import json
 import logging
 import math
 import re
-from typing import Any, Optional, Type, TypeVar
+from typing import Any, Literal, Optional, Type, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
@@ -48,6 +48,8 @@ def coerce_to_schema(schema_cls: Type[T], data: Any) -> Any:
 
     - 缺失字段：若模型定义了默认值则自动补齐（如 SceneSpec.time_of_day）
     - 列表字段收到字符串：按分隔符拆分或包成单元素列表（如 genre="Neo-Noir" → ["Neo-Noir"]）
+    - Literal 枚举字段收到脏值：同义词/中英文映射到合法值，映射不到取最接近的合法值
+      （如 shot_size="全景"→"WS"，production_risk="高风险"→"high"）
     - 多余字段：丢弃（配合 extra="forbid"）
     """
     if not isinstance(schema_cls, type) or not issubclass(schema_cls, BaseModel):
@@ -63,16 +65,25 @@ def coerce_to_schema(schema_cls: Type[T], data: Any) -> Any:
             continue
         value = data[name]
         annotation = field_info.annotation
-        # list[str] 收到字符串 → 拆分/包裹
         origin = getattr(annotation, "__origin__", None)
-        if origin is list and isinstance(value, str):
+        # Literal 枚举脏值映射
+        if origin is Literal and isinstance(value, str):
+            allowed = annotation.__args__
+            if value not in allowed:
+                value = _map_enum_value(value, allowed)
+        # 数字字段收到 "45秒" / "4.5" 等字符串 → 抽取数字
+        elif origin is None and annotation in (int, float) and isinstance(value, str):
+            m = re.search(r"-?\d+(?:\.\d+)?", value)
+            if m:
+                value = annotation(m.group(0))
+        # list[str] 收到字符串 → 拆分/包裹
+        elif origin is list and isinstance(value, str):
             item_type = annotation.__args__[0] if getattr(annotation, "__args__", None) else str
             if item_type is str:
                 value = [p.strip() for p in re.split(r"[,，;；、/]", value) if p.strip()] or [value.strip()]
-        # dict[str, X] 以外的嵌套模型递归
-        if origin is None and isinstance(annotation, type) and issubclass(annotation, BaseModel) and isinstance(value, (dict, list)):
-            if isinstance(value, dict):
-                value = coerce_to_schema(annotation, value)
+        # 嵌套模型递归
+        if origin is None and isinstance(annotation, type) and issubclass(annotation, BaseModel) and isinstance(value, dict):
+            value = coerce_to_schema(annotation, value)
         elif origin is list:
             args = getattr(annotation, "__args__", (None,))
             item_type = args[0]
@@ -80,6 +91,63 @@ def coerce_to_schema(schema_cls: Type[T], data: Any) -> Any:
                 value = [coerce_to_schema(item_type, item) if isinstance(item, dict) else item for item in value]
         cleaned[name] = value
     return cleaned
+
+
+def _map_enum_value(value: str, allowed: tuple) -> Any:
+    """把 LLM 的自由文本枚举值映射回合法值；映射不到取第一个合法值兜底。"""
+    v = value.strip().lower()
+    synonym_table: dict[tuple, dict[str, str]] = {
+        # shot_size（景别）
+        ("ECU", "CU", "MCU", "MS", "MLS", "WS", "EWS"): {
+            "ecus": "ECU", "extreme close": "ECU", "大特写": "ECU", "特写镜头": "CU",
+            "close": "CU", "特写": "CU", "面部特写": "CU", "近景": "MCU", "中近": "MCU",
+            "medium close": "MCU", "中景": "MS", "medium": "MS", "中全景": "MLS", "全景": "WS",
+            "medium long": "MLS", "wide": "WS", "远景": "EWS",
+            "大远景": "EWS", "extreme wide": "EWS", "establishing": "EWS",
+        },
+        # production_risk
+        ("low", "medium", "high"): {
+            "低": "low", "低风险": "low", "高": "high", "高风险": "high", "中": "medium",
+            "中风险": "medium", "极低": "low", "极高": "high",
+        },
+        # generation_mode
+        ("text_to_image", "image_to_video", "text_to_video"): {
+            "文生图": "text_to_image", "图生视频": "image_to_video", "文生视频": "text_to_video",
+            "t2i": "text_to_image", "i2v": "image_to_video", "t2v": "text_to_video",
+        },
+        # aspect_ratio
+        ("16:9", "9:16", "1:1", "2.39:1"): {
+            "横屏": "16:9", "竖屏": "9:16", "方形": "1:1", "宽银幕": "2.39:1",
+        },
+        # dialogue_mode
+        ("none", "voiceover", "dialogue", "mixed"): {
+            "无对白": "none", "旁白": "voiceover", "画外音": "voiceover",
+            "对白": "dialogue", "混合": "mixed",
+        },
+        # platform
+        ("douyin", "bilibili", "youtube", "other"): {
+            "抖音": "douyin", "b站": "bilibili", "youtube": "youtube", "其他": "other",
+        },
+        # purpose
+        ("short_film", "trailer", "ad", "music_video", "social_video"): {
+            "短片": "short_film", "预告": "trailer", "预告片": "trailer",
+            "广告": "ad", "mv": "music_video", "社交": "social_video",
+        },
+    }
+    for allowed_set, table in synonym_table.items():
+        if set(allowed_set) == set(allowed):
+            # 先精确匹配，再子串匹配（按表序），避免"全景"误命中"中全景"
+            if v in table:
+                return table[v]
+            for hint, target in table.items():
+                if hint in v or v in hint:
+                    return target
+            break
+    # 兜底：包含关系匹配（如 "high risk" 含 "high"）
+    for candidate in allowed:
+        if isinstance(candidate, str) and (candidate.lower() in v or v in candidate.lower()):
+            return candidate
+    return allowed[0]
 
 
 class LLMService:
