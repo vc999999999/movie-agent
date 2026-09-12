@@ -44,6 +44,7 @@ def test_pack_registry_and_grammar_validation():
 async def test_treatment_path_generates_grammar_bound_shots():
     project = project_service.create_project("做一个30秒雨夜侦探追凶悬疑预告片")
     await project_service.analyze_input(project["id"])
+    await project_service.confirm_brief(project["id"])
     auteur = project_service.apply_auteur_profile(
         project["id"],
         "christopher_nolan_technique_study",
@@ -57,6 +58,7 @@ async def test_treatment_path_generates_grammar_bound_shots():
     assert all(option.technique_plan for option in treatments.options)
 
     await project_service.confirm_treatment(project["id"], treatments.recommendation)
+    await project_service.run_auto_pipeline(project["id"])
     shots = project_service.get_shots(project["id"])
     selected = next(item for item in treatments.options if item.treatment_id == treatments.recommendation)
     assert shots and all(shot["grammar_pack_id"] == selected.production_pack_id for shot in shots)

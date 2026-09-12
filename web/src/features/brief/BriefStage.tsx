@@ -1,3 +1,4 @@
+import { navigateStage } from "../../app/stages";
 import { useEffect, useState } from "react";
 import {
   useConfirmBrief,
@@ -93,6 +94,7 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
   const submit = () => {
     if (confirmBrief.isPending) return;
     const payload: Record<string, unknown> = {
+      ...form,
       title: form.title,
       logline: form.logline,
       duration_seconds: form.duration_seconds,
@@ -106,13 +108,13 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
     };
     withWait(
       {
-        step: "确认简报并生成剧本",
-        detail: "AI 正在拆解场景、锁定角色设定并生成分镜",
-        expect: "通常需要 30~90 秒",
+        step: "保存剧情拆解",
+        detail: "保存你的剧情设定，下一步选择导演模板",
+        expect: "正在保存",
       },
       () => confirmBrief.mutateAsync(payload),
     )
-      .then(() => toast("创作简报已确认，剧本与分镜已生成", "success"))
+      .then(() => { toast("剧情已确认，请选择导演模板", "success"); navigateStage("auteur"); })
       .catch((err) => toast("确认失败：" + (err?.message ?? "未知错误"), "error"));
   };
 
@@ -121,7 +123,7 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
     <div className="card" style={{ padding: 22, display: "grid", gap: 16 }}>
       <h2 className="display" style={{ fontSize: 20 }}>创作简报审阅</h2>
       <p className="text-secondary" style={{ fontSize: 13 }}>
-        确认后 Agent 将锁定创作设定并生成剧本与分镜。上游修改会使下游产物失效。
+        确认剧情拆解后，先选择导演模板与方案，再生成完整制作流程。修改已确认的剧情会使旧制作包失效。
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         {field("标题", <input value={form.title ?? ""} onChange={(e) => set("title", e.target.value)} />)}
@@ -153,6 +155,8 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
         )}
       </div>
       {field("Logline", <textarea rows={2} value={form.logline} onChange={(e) => set("logline", e.target.value)} />)}
+      {field("故事内容", <textarea rows={4} value={form.story_summary} onChange={(e) => set("story_summary", e.target.value)} />)}
+      {field("必须保留的内容（每行一项）", <textarea rows={2} value={form.user_must_keep.join("\n")} onChange={(e) => set("user_must_keep", e.target.value.split("\n"))} />)}
       {field("视觉风格", <input value={form.visual_style} onChange={(e) => set("visual_style", e.target.value)} />)}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         {field("主角", <input value={form.protagonist} onChange={(e) => set("protagonist", e.target.value)} />)}
@@ -173,12 +177,12 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
       ) : null}
 
       {confirmBrief.isError ? (
-        <ErrorNotice title="确认简报失败" impact="剧本与分镜尚未生成。" error={confirmBrief.error} />
+        <ErrorNotice title="确认简报失败" impact="剧情设定尚未保存。" error={confirmBrief.error} />
       ) : null}
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Button variant="primary" onClick={submit} disabled={confirmBrief.isPending}>
-          {confirmBrief.isPending ? "正在生成剧本与分镜…" : "确认简报并生成剧本"}
+          {confirmBrief.isPending ? "正在保存…" : "确认剧情，选择导演模板"}
         </Button>
       </div>
     </div>
@@ -189,7 +193,7 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
 export function BriefStage({ projectId }: { projectId: string }) {
   const projectQuery = useProject(projectId);
   const status = projectQuery.data?.project.status;
-  const isReview = status === "brief_review";
+  const isReview = status !== undefined && status !== "collecting";
   const questionsQuery = useQuestions(isReview ? null : projectId);
   const submitAnswers = useSubmitAnswers(projectId);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -244,7 +248,7 @@ export function BriefStage({ projectId }: { projectId: string }) {
   const answeredCount = Object.keys(answers).length;
 
   const submit = () => {
-    if (answeredCount === 0 || submitAnswers.isPending) return;
+    if (submitAnswers.isPending) return;
     withWait(
       { step: "分析你的回答", detail: "AI 正在把答案融入创作简报", expect: "通常需要 10~30 秒" },
       () =>
@@ -306,8 +310,8 @@ export function BriefStage({ projectId }: { projectId: string }) {
 
       {qResp && qResp.questions.length > 0 ? (
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <Button variant="primary" onClick={submit} disabled={answeredCount === 0 || submitAnswers.isPending}>
-            {submitAnswers.isPending ? "提交中…" : `提交 ${answeredCount} 个回答`}
+          <Button variant="primary" onClick={submit} disabled={submitAnswers.isPending}>
+            {submitAnswers.isPending ? "提交中…" : answeredCount > 0 ? `提交 ${answeredCount} 个回答` : "采用默认设定，审阅剧情"}
           </Button>
         </div>
       ) : null}

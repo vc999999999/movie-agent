@@ -4,6 +4,12 @@ import os
 import pytest
 from agent.service import project_service
 
+async def choose_and_generate(pid):
+    treatments = await project_service.generate_treatments(pid)
+    await project_service.confirm_treatment(pid, treatments.options[0].treatment_id)
+    await project_service.run_auto_pipeline(pid)
+
+
 @pytest.mark.asyncio
 async def test_case_1_30s_vertical_trailer():
     """Case 1: 一句话 30 秒竖屏预告片."""
@@ -18,6 +24,8 @@ async def test_case_1_30s_vertical_trailer():
     brief = await project_service.confirm_brief(pid)
     assert brief.duration_seconds == 30
     assert brief.aspect_ratio == "9:16"
+
+    await choose_and_generate(pid)
 
     # Screenplay & shots
     screenplay_data = project_service.get_screenplay(pid)
@@ -57,6 +65,7 @@ async def test_case_2_60s_two_characters_with_dialogue():
         "ending": "反转结局"
     })
 
+    await choose_and_generate(pid)
     shots = project_service.get_shots(pid)
     total_dur = sum(s["duration_seconds"] for s in shots)
     # 5% tolerance for 60s: <= 3.0s
@@ -75,6 +84,8 @@ async def test_case_3_complete_pipeline_with_render_and_rough_cut():
     # 1. Step 1 -> Step 2
     await project_service.analyze_input(pid)
     await project_service.confirm_brief(pid)
+
+    await choose_and_generate(pid)
 
     # 2. Step 3 Shots confirmation
     shots = await project_service.confirm_shots(pid)

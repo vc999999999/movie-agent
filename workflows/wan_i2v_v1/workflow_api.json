@@ -1,50 +1,175 @@
 {
-  "10": {
-    "class_type": "WanVideoModelLoader",
+  "8": {
+    "class_type": "VAEDecode",
     "inputs": {
-      "model_name": "Wan2.1-I2V-14B-720P.safetensors"
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
     }
   },
-  "20": {
+  "39": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    }
+  },
+  "28": {
+    "class_type": "SaveAnimatedWEBP",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "ComfyUI",
+      "fps": 16,
+      "lossless": false,
+      "quality": 90,
+      "method": "default"
+    }
+  },
+  "47": {
+    "class_type": "SaveWEBM",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "ComfyUI",
+      "codec": "vp9",
+      "fps": 24,
+      "crf": 32
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "38",
+        0
+      ],
+      "text": "blurry, low quality"
+    }
+  },
+  "50": {
+    "class_type": "WanImageToVideo",
+    "inputs": {
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "clip_vision_output": [
+        "51",
+        0
+      ],
+      "start_image": [
+        "52",
+        0
+      ],
+      "width": 512,
+      "height": 512,
+      "length": 33,
+      "batch_size": 1
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "38",
+        0
+      ],
+      "text": "cinematic scene"
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "54",
+        0
+      ],
+      "positive": [
+        "50",
+        0
+      ],
+      "negative": [
+        "50",
+        1
+      ],
+      "latent_image": [
+        "50",
+        2
+      ],
+      "seed": 987948718394761,
+      "steps": 20,
+      "cfg": 6,
+      "sampler_name": "uni_pc",
+      "scheduler": "simple",
+      "denoise": 1
+    }
+  },
+  "49": {
+    "class_type": "CLIPVisionLoader",
+    "inputs": {
+      "clip_name": "clip_vision_h.safetensors"
+    }
+  },
+  "51": {
+    "class_type": "CLIPVisionEncode",
+    "inputs": {
+      "clip_vision": [
+        "49",
+        0
+      ],
+      "image": [
+        "52",
+        0
+      ],
+      "crop": "none"
+    }
+  },
+  "52": {
     "class_type": "LoadImage",
     "inputs": {
       "image": "first_frame.png"
     }
   },
-  "30": {
-    "class_type": "WanVideoSampler",
+  "38": {
+    "class_type": "CLIPLoader",
     "inputs": {
-      "model": ["10", 0],
-      "image": ["20", 0],
-      "positive": ["40", 0],
-      "negative": ["41", 0],
-      "seed": 88888888,
-      "steps": 30,
-      "cfg": 6.0,
-      "length": 81,
-      "width": 1280,
-      "height": 720,
-      "fps": 24
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
     }
   },
-  "40": {
-    "class_type": "CLIPTextEncode",
+  "37": {
+    "class_type": "UNETLoader",
     "inputs": {
-      "text": "cinematic action"
+      "unet_name": "wan2.1_i2v_480p_14B_fp16.safetensors",
+      "weight_dtype": "default"
     }
   },
-  "41": {
-    "class_type": "CLIPTextEncode",
+  "54": {
+    "class_type": "ModelSamplingSD3",
     "inputs": {
-      "text": "blurry, low quality"
-    }
-  },
-  "50": {
-    "class_type": "VHS_VideoCombine",
-    "inputs": {
-      "images": ["30", 0],
-      "frame_rate": 24,
-      "filename_prefix": "wan_i2v_out"
+      "model": [
+        "37",
+        0
+      ],
+      "shift": 8
     }
   }
 }

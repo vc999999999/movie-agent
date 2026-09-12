@@ -55,7 +55,7 @@ export function useShell(): ShellContextValue {
 export function ShellProvider({ children }: { children: ReactNode }) {
   const [inspector, setInspectorNode] = useState<ReactNode>(null);
   const [aiWait, setAiWait] = useState<AiWaitDisplay | null>(null);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [dockTasks, dispatch] = useReducer(dockReducer, []);
 
   const setInspector = useCallback((node: ReactNode) => setInspectorNode(node), []);

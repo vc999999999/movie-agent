@@ -132,6 +132,8 @@ function useInvalidator() {
   const qc = useQueryClient();
   return {
     invalidateProject: (id: string) => {
+      void qc.invalidateQueries({ queryKey: ["delivery", id] });
+      void qc.invalidateQueries({ queryKey: ["production-progress", id] });
       void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
       void qc.invalidateQueries({ queryKey: queryKeys.projectList });
     },
@@ -175,7 +177,7 @@ export function useSubmitAnswers(projectId: string) {
     mutationFn: (answers: { field: string; answer: string }[]) =>
       apiJson<QuestionsResponse>(`/api/projects/${encodeSeg(projectId)}/answers`, {
         method: "POST",
-        body: { answers },
+        body: { answers, use_defaults: true },
       }),
     onSuccess: (data) => {
       qc.setQueryData(queryKeys.questions(projectId), data);
@@ -194,7 +196,7 @@ export function useConfirmBrief(projectId: string) {
       ),
     onSuccess: () => {
       inv.invalidateProject(projectId);
-      inv.invalidateFromTreatment(projectId);
+      inv.invalidateDownstream(projectId);
     },
   });
 }
@@ -231,12 +233,15 @@ export function useClearAuteurProfile(projectId: string) {
 }
 
 export function useGenerateTreatments(projectId: string) {
+  const inv = useInvalidator();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
       apiJson<TreatmentPackage>(`/api/projects/${encodeSeg(projectId)}/treatments/generate`, { method: "POST" }),
     onSuccess: (data) => {
       qc.setQueryData(queryKeys.treatments(projectId), data);
+      inv.invalidateProject(projectId);
+      inv.invalidateFromTreatment(projectId);
     },
   });
 }
@@ -251,7 +256,7 @@ export function useConfirmTreatment(projectId: string) {
       ),
     onSuccess: () => {
       inv.invalidateProject(projectId);
-      inv.invalidateFromTreatment(projectId);
+      inv.invalidateDownstream(projectId);
     },
   });
 }
@@ -265,6 +270,7 @@ export function useUpdateShot(projectId: string) {
         { method: "PATCH", body: { updates: input.updates } },
       ),
     onSuccess: () => {
+      inv.invalidateProject(projectId);
       inv.invalidateFromShot(projectId);
     },
   });
@@ -277,18 +283,20 @@ export function useConfirmShots(projectId: string) {
       apiJson<{ status: string }>(`/api/projects/${encodeSeg(projectId)}/shots/confirm`, { method: "POST" }),
     onSuccess: () => {
       inv.invalidateProject(projectId);
-      void inv;
+      inv.invalidateFromShot(projectId);
     },
   });
 }
 
 export function useCompilePackages(projectId: string) {
+  const inv = useInvalidator();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
       apiJson<PackagesResponse>(`/api/projects/${encodeSeg(projectId)}/packages/generate`, { method: "POST" }),
     onSuccess: (data) => {
       qc.setQueryData(queryKeys.packages(projectId), data);
+      inv.invalidateProject(projectId);
     },
   });
 }
@@ -314,7 +322,7 @@ export function useRenderAll(projectId: string) {
       apiJson<RenderRun[]>(`/api/projects/${encodeSeg(projectId)}/render_all`, { method: "POST" }),
     onSuccess: () => {
       inv.invalidateProject(projectId);
-      void inv;
+      inv.invalidateFromShot(projectId);
     },
   });
 }

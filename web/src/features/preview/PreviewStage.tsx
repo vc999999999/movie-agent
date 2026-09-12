@@ -1,3 +1,4 @@
+import { navigateStage } from "../../app/stages";
 import { useMemo, useState } from "react";
 import { encodeSeg, outputUrl } from "../../api/client";
 import { useCreateRoughCut, usePackages, useProject, useShots } from "../../api/queries";
@@ -113,6 +114,7 @@ export function PreviewStage({ projectId }: { projectId: string }) {
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
+      <Button onClick={() => navigateStage("generation")}>返回工作流导出</Button>
       <header>
         <h2 className="display" style={{ fontSize: 22 }}>粗剪预览</h2>
         <p className="text-secondary" style={{ fontSize: 13, marginTop: 6 }}>

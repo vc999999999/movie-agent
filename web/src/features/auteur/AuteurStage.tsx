@@ -1,3 +1,6 @@
+import { navigateStage } from "../../app/stages";
+import { useGenerateTreatments } from "../../api/queries";
+import { useAiWait } from "../../components/useAiWait";
 import { useEffect, useMemo, useState } from "react";
 import {
   useApplyAuteurProfile,
@@ -27,6 +30,8 @@ const DOMAIN_LABEL: Record<string, string> = {
 
 export function AuteurStage({ projectId }: { projectId: string }) {
   const profilesQuery = useAuteurProfiles();
+  const generate = useGenerateTreatments(projectId);
+  const { withWait } = useAiWait();
   const contextQuery = useAuteurContext(projectId, true);
   const applyProfile = useApplyAuteurProfile(projectId);
   const clearProfile = useClearAuteurProfile(projectId);
@@ -99,28 +104,28 @@ export function AuteurStage({ projectId }: { projectId: string }) {
     setPreserveInput("");
   };
 
-  const apply = () => {
-    if (!profile || applyProfile.isPending) return;
-    applyProfile.mutate(
-      {
-        profile_id: profile.profile_id,
-        variant_id: variant?.variant_id,
-        intensity,
-        preserve,
-      },
-      { onSuccess: () => toast("名导技法已应用", "success") },
-    );
+  const busy = applyProfile.isPending || clearProfile.isPending || generate.isPending;
+  const apply = (original = false) => {
+    if (busy || (!original && !profile)) return;
+    withWait({ step: "生成导演方案", detail: "按你选择的模板设计可比较的剧情方案" }, async () => {
+      if (original) await clearProfile.mutateAsync();
+      else await applyProfile.mutateAsync({ profile_id: profile!.profile_id, variant_id: variant?.variant_id, intensity, preserve });
+      await generate.mutateAsync();
+    }).then(() => { toast("方案已生成，请选择", "success"); navigateStage("treatments"); })
+      .catch(err => toast(err?.message ?? "生成失败，请重试", "error"));
   };
 
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <header>
-        <h2 className="display" style={{ fontSize: 22 }}>导演技法工作室</h2>
+        <h2 className="display" style={{ fontSize: 22 }}>选择导演模板</h2>
         <p className="text-secondary" style={{ fontSize: 13, marginTop: 6 }}>
           选择一套研究性归纳的导演技法模式，控制应用强度与必须保留的内容。
         </p>
       </header>
 
+      <div className="card" style={{ padding: 18, display: "grid", gap: 10 }}><h3>原创导演方案</h3><p className="text-secondary">保留你的剧情，由 Agent 设计叙事结构，不套用名导技法。</p><div><Button onClick={() => apply(true)} disabled={busy}>采用原创模式，生成方案</Button></div></div>
+      {generate.isError ? <ErrorNotice title="导演方案生成失败" error={generate.error} /> : null}
       {profilesQuery.isError ? (
         <ErrorNotice title="无法载入名导档案" error={profilesQuery.error} />
       ) : null}
@@ -263,8 +268,8 @@ export function AuteurStage({ projectId }: { projectId: string }) {
                   移除技法
                 </Button>
               ) : null}
-              <Button variant="primary" onClick={apply} disabled={applyProfile.isPending}>
-                {applyProfile.isPending ? "应用中…" : "应用技法"}
+              <Button variant="primary" onClick={() => apply()} disabled={busy}>
+                {busy ? "正在生成方案…" : "应用模板，生成导演方案"}
               </Button>
             </div>
           </div>

@@ -1,3 +1,4 @@
+import { DemoNotice } from "../../components/DemoNotice";
 import { useState } from "react";
 import { useCreateProject, useProjectList } from "../../api/queries";
 import { Button } from "../../components/Button";
@@ -42,11 +43,12 @@ export function BriefHome({ onCreated, onOpen }: BriefHomeProps) {
   return (
     <div style={{ maxWidth: 880, margin: "0 auto", padding: "72px 24px 64px", display: "grid", gap: 32 }}>
       <div style={{ textAlign: "center", display: "grid", gap: 12 }}>
+        <DemoNotice />
         <h1 className="display" style={{ fontSize: 34, fontWeight: 600 }}>
           你脑海里的第一场戏是什么？
         </h1>
         <p className="text-secondary" style={{ fontSize: 15 }}>
-          用一句话描述创意，导演 Agent 会反问你真正需要决定的问题。
+          输入剧情或场景，拆解需求、选择导演模板，生成可交给 ComfyUI 使用的完整制作包。
         </p>
       </div>
 
@@ -72,7 +74,7 @@ export function BriefHome({ onCreated, onOpen }: BriefHomeProps) {
           ))}
           <span style={{ flex: 1 }} />
           <Button variant="primary" onClick={submit} disabled={!text.trim() || createProject.isPending}>
-            {createProject.isPending ? "正在分析要素与规划…" : "开始导演"}
+            {createProject.isPending ? "正在分析要素与规划…" : "拆解剧情"}
           </Button>
         </div>
         {createProject.isError ? (
@@ -84,8 +86,8 @@ export function BriefHome({ onCreated, onOpen }: BriefHomeProps) {
         ) : null}
       </div>
 
-      <section aria-label="创意示例">
-        <h2 className="text-tertiary" style={{ fontSize: 13, fontWeight: 500, marginBottom: 10 }}>真实示例</h2>
+      <section aria-label="剧情示例">
+        <h2 className="text-tertiary" style={{ fontSize: 13, fontWeight: 500, marginBottom: 10 }}>试试这些剧情</h2>
         <div style={{ display: "grid", gap: 8 }}>
           {EXAMPLES.map((ex) => (
             <button

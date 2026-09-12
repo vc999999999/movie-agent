@@ -1,0 +1,60 @@
+{
+  "8": {},
+  "39": {
+    "vae_name": 0
+  },
+  "28": {
+    "filename_prefix": 0,
+    "fps": 1,
+    "lossless": 2,
+    "quality": 3,
+    "method": 4
+  },
+  "47": {
+    "filename_prefix": 0,
+    "codec": 1,
+    "fps": 2,
+    "crf": 3
+  },
+  "7": {
+    "text": 0
+  },
+  "50": {
+    "width": 0,
+    "height": 1,
+    "length": 2,
+    "batch_size": 3
+  },
+  "6": {
+    "text": 0
+  },
+  "3": {
+    "seed": 0,
+    "steps": 2,
+    "cfg": 3,
+    "sampler_name": 4,
+    "scheduler": 5,
+    "denoise": 6
+  },
+  "49": {
+    "clip_name": 0
+  },
+  "51": {
+    "crop": 0
+  },
+  "52": {
+    "image": 0
+  },
+  "38": {
+    "clip_name": 0,
+    "type": 1,
+    "device": 2
+  },
+  "37": {
+    "unet_name": 0,
+    "weight_dtype": 1
+  },
+  "54": {
+    "shift": 0
+  }
+}

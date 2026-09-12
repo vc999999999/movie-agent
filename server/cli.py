@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from pathlib import Path
+from agent.delivery import build_archive
+from server.config import settings
 
 from server.db import init_db
 from agent.service import project_service
@@ -32,6 +35,10 @@ async def run_cli():
     cut_parser = subparsers.add_parser("rough-cut", help="Stitch shots into unified MP4 video with FFmpeg")
     cut_parser.add_argument("--id", type=str, required=True, help="Project ID")
 
+    export_parser = subparsers.add_parser("export", help="Export portable ComfyUI production ZIP")
+    export_parser.add_argument("--id", required=True)
+    export_parser.add_argument("--output", type=Path)
+
     # Command: workflows
     subparsers.add_parser("workflows", help="List available ComfyUI workflow templates")
 
@@ -49,10 +56,16 @@ async def run_cli():
         print("🔍 正在分析创意并提炼创作要素...")
         q_resp = await project_service.analyze_input(pid)
 
-        if args.auto or q_resp.status == "brief_review":
+        if args.auto:
             print("⚡ 自动模式：确认创作简报...")
             await project_service.confirm_brief(pid)
-            print("✅ 剧本与分镜镜头表已生成!")
+            treatments = await project_service.generate_treatments(pid)
+            print(f"--auto 已授权使用推荐方案：{treatments.recommendation}")
+            await project_service.confirm_treatment(pid, treatments.recommendation)
+            await project_service.run_auto_pipeline(pid)
+            export_path = settings.data_dir / pid / f"{pid}_comfyui.zip"
+            export_path.write_bytes(build_archive(project_service, pid))
+            print(f"制作包已导出: {export_path}")
 
             print("📦 正在确认镜头并编译 Prompt 包及注入 ComfyUI 工作流...")
             await project_service.confirm_shots(pid)
@@ -62,7 +75,7 @@ async def run_cli():
             print("\n" + "="*50)
             print(packages["production_report"])
             print("="*50)
-            print(f"\n🎉 项目 {pid} 准备就绪！可运行 `python -m app.cli render --id {pid}` 执行生成。")
+            print(f"\n🎉 项目 {pid} 准备就绪！可运行 `python -m server.cli render --id {pid}` 执行生成。")
         else:
             print(f"\n❓ 当前需要澄清的问题 (轮次 {q_resp.round}/3):")
             for q in q_resp.questions:
@@ -99,6 +112,13 @@ async def run_cli():
         print(f"\n🎞️ 正在调用 FFmpeg 合成项目 {args.id} 的粗剪短片...")
         cut_path = await project_service.create_rough_cut(args.id)
         print(f"✅ 粗剪视频合成成功: {cut_path}")
+
+    elif args.command == "export":
+        path = args.output or settings.data_dir / args.id / f"{args.id}_comfyui.zip"
+        data = build_archive(project_service, args.id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        print(f"制作包已导出: {path.resolve()}")
 
     elif args.command == "workflows":
         print(f"\n🛠️ 已登记的 ComfyUI 工作流模板:")

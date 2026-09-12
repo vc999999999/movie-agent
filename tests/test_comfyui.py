@@ -29,3 +29,9 @@ async def test_unreachable_server_does_not_fake_success():
     assert prompt_id is None
     assert error is not None
     assert error.code == "COMFYUI_CONNECTION_ERROR"
+
+
+def test_native_webm_output_ignores_preview_image():
+    history = {"outputs": {"28": {"images": [{"filename": "preview.webp"}]}, "47": {"images": [{"filename": "shot.webm", "subfolder": "", "type": "output"}]}}}
+    assert ComfyUIClient.first_video_output(history)["filename"] == "shot.webm"
+    assert ComfyUIClient.first_video_output({"outputs": {"28": {"images": [{"filename": "preview.webp"}]}}}) is None

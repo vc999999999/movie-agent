@@ -155,3 +155,16 @@
 @media (prefers-reduced-motion: reduce) {
   .shell-inspector { transition: none; }
 }
+
+.shell-topbar > strong { flex-shrink: 0; white-space: nowrap; }
+.inspector-close { display: none; margin-bottom: 20px; }
+@media (max-width: 1279px) { .inspector-close { display: inline-block; } }
+@media (max-width: 959px) {
+  .shell-topbar { gap: 8px; padding: 0 12px; }
+  .shell-topbar .project-id, .shell-topbar .project-title, .shell-topbar .project-state, .shell-topbar .rail-toggle { display: none; }
+  .shell-topbar .tag { flex-shrink: 0; white-space: nowrap; font-size: 11px; }
+  .shell-inspector { max-width: calc(100vw - 32px); }
+  .mobile-stage-nav .rail-item { width: auto; flex: 1 0 0; flex-direction: column; gap: 2px; padding: 8px 3px; }
+  .mobile-stage-nav .rail-label { display: block; font-size: 10px; white-space: nowrap; }
+  .mobile-stage-nav .optional-navigation { display: none; }
+}

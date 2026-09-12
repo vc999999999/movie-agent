@@ -1,12 +1,40 @@
 {
   "workflow_id": "wan_i2v_v1",
-  "version": "1.0.0",
-  "name": "Wan2.1 图生视频工作流 (720P)",
+  "version": "2.0.0",
+  "name": "Wan2.1 原生图生视频 · 官方节点",
   "generation_mode": "image_to_video",
-  "supported_aspect_ratios": ["16:9", "9:16", "2.39:1"],
+  "supported_aspect_ratios": [
+    "16:9",
+    "9:16",
+    "2.39:1"
+  ],
   "min_vram_gb": 16,
-  "max_frames": 120,
-  "required_models": ["Wan2.1-I2V-14B-720P.safetensors"],
-  "required_nodes": ["WanVideoModelLoader", "LoadImage", "WanVideoSampler", "CLIPTextEncode", "VHS_VideoCombine"],
-  "accepted_references": ["character", "first_frame"]
+  "max_frames": 121,
+  "required_models": [
+    "diffusion_models/wan2.1_i2v_480p_14B_fp16.safetensors",
+    "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+    "vae/wan_2.1_vae.safetensors",
+    "clip_vision/clip_vision_h.safetensors"
+  ],
+  "required_nodes": [
+    "VAEDecode",
+    "VAELoader",
+    "SaveAnimatedWEBP",
+    "SaveWEBM",
+    "CLIPTextEncode",
+    "WanImageToVideo",
+    "KSampler",
+    "CLIPVisionLoader",
+    "CLIPVisionEncode",
+    "LoadImage",
+    "CLIPLoader",
+    "UNETLoader",
+    "ModelSamplingSD3"
+  ],
+  "accepted_references": [
+    "character",
+    "first_frame"
+  ],
+  "frame_step": 4,
+  "frame_offset": 1
 }

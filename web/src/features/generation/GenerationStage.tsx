@@ -1,348 +1,67 @@
-import { useEffect, useState } from "react";
-import { encodeSeg, outputUrl } from "../../api/client";
-import {
-  useCompilePackages,
-  usePackages,
-  useRenderAll,
-  useRenderRun,
-  useRenderShot,
-} from "../../api/queries";
-import type { PackagesResponse, ShotPrompt, WorkflowPlan } from "../../api/types";
-import type { StageId } from "../../app/stages";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiJson, encodeSeg } from "../../api/client";
+import { useCompilePackages, usePackages } from "../../api/queries";
+import { navigateStage } from "../../app/stages";
 import { Button } from "../../components/Button";
 import { ErrorNotice } from "../../components/ErrorNotice";
-import { PipelineSwarm, usePipelineStatus } from "../../components/PipelineSwarm";
-import { StatusBadge } from "../../components/StatusBadge";
-import { useToast } from "../../components/Toast";
-import { useAiWait } from "../../components/useAiWait";
 import { useInspector } from "../../app/App";
-import { useShell } from "../../app/ShellContext";
 
-function CollapsiblePrompt({ label, text }: { label: string; text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div>
-      <button
-        type="button"
-        className="text-tertiary"
-        style={{ fontSize: 11, textDecoration: "underline" }}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        {open ? "收起" : "展开"}{label}
-      </button>
-      <pre
-        className="mono"
-        style={{
-          marginTop: 6,
-          fontSize: 11,
-          lineHeight: 1.6,
-          color: "var(--text-secondary)",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          background: "rgb(0 0 0 / 30%)",
-          borderRadius: 8,
-          padding: 10,
-          maxHeight: open ? 320 : 44,
-          overflow: "hidden",
-          transition: "max-height 220ms var(--spring)",
-        }}
-      >
-        {text}
-      </pre>
-    </div>
-  );
+interface Delivery {
+  status: "complete" | "partial";
+  shot_count: number; workflow_count: number; ui_workflow_count: number; required_asset_count: number;
+  workflows: { shot_id: string; workflow_id: string | null; reason: string | null; ui_file: string | null; api_file: string | null }[];
+  dependencies: { workflow_id: string; name: string; min_vram_gb: number; required_models: string[]; required_nodes: string[] }[];
+  assets: { filename: string; shot_id: string; positive_prompt: string; negative_prompt: string; width: number; height: number }[];
 }
-
-const PLAN_STATUS: Record<WorkflowPlan["status"], { label: string; tone: "success" | "warning" | "danger" }> = {
-  matched: { label: "工作流已匹配", tone: "success" },
-  unsupported: { label: "不支持", tone: "danger" },
-  precheck_failed: { label: "预检失败", tone: "danger" },
-};
-
-function ShotPackageCard({
-  projectId,
-  pkg,
-  plan,
-}: {
-  projectId: string;
-  pkg: ShotPrompt;
-  plan: WorkflowPlan | undefined;
-}) {
-  const renderShot = useRenderShot(projectId);
-  const [renderId, setRenderId] = useState<string | null>(null);
-  const [initialStatus, setInitialStatus] = useState<string | null>(null);
-  const runQuery = useRenderRun(renderId);
-  const { addDockTask, updateDockTask } = useShell();
-  const { toast } = useToast();
-  const { withWait } = useAiWait();
-
-  const run = runQuery.data ?? null;
-  const matched = plan?.status === "matched";
-  const planMeta = plan ? PLAN_STATUS[plan.status] : null;
-
-  useEffect(() => {
-    if (!run) return;
-    updateDockTask(
-      `render-${run.id}`,
-      run.status === "pending" ? "submitted" : run.status,
-      run.status === "failed" ? (typeof run.error_json?.message === "string" ? run.error_json.message : "渲染失败") : undefined,
-    );
-  }, [run, updateDockTask]);
-
-  const startRender = () => {
-    if (renderShot.isPending || !matched) return;
-    withWait(
-      {
-        step: `渲染镜头 ${pkg.shot_id}`,
-        detail: "云端视频模型正在生成该镜头画面，单镜头通常需要 3~10 分钟",
-        expect: "免费档视频队列偶有排队",
-      },
-      () => renderShot.mutateAsync(pkg.shot_id),
-    )
-      .then((r) => {
-        setRenderId(r.id);
-        setInitialStatus(r.status);
-        addDockTask({
-          id: `render-${r.id}`,
-          label: `渲染 ${pkg.shot_id}`,
-          status: r.status === "pending" ? "submitted" : r.status,
-        });
-        if (r.status === "success") toast(`${pkg.shot_id} 渲染成功`, "success");
-        if (r.status === "failed") toast(`${pkg.shot_id} 渲染失败`, "error");
-      })
-      .catch(() => toast("渲染请求失败", "error"));
-  };
-
-  const activeStatus = run?.status ?? (renderShot.data && renderId === renderShot.data.id ? renderShot.data.status : initialStatus);
-  const failedMessage =
-    activeStatus === "failed"
-      ? typeof run?.error_json?.message === "string"
-        ? run.error_json.message
-        : "渲染失败"
-      : null;
-
-  return (
-    <article className="card" style={{ padding: 18, display: "grid", gap: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <strong className="mono" style={{ fontSize: 14 }}>{pkg.shot_id}</strong>
-        {planMeta ? <StatusBadge tone={planMeta.tone} label={planMeta.label} /> : null}
-        {plan?.workflow_id ? <span className="tag mono" style={{ fontSize: 11 }}>{plan.workflow_id}</span> : null}
-        <span style={{ flex: 1 }} />
-        {matched ? (
-          <a
-            className="tag hover-lift"
-            href={`/api/projects/${encodeSeg(projectId)}/workflow/${encodeSeg(pkg.shot_id)}`}
-            download
-          >
-            下载 Patched Workflow
-          </a>
-        ) : null}
-      </div>
-
-      {plan && plan.status !== "matched" && plan.reason ? (
-        <ErrorNotice
-          title={`镜头 ${pkg.shot_id} 无法进入生成`}
-          impact={plan.reason}
-          actions={<span className="text-tertiary" style={{ fontSize: 12 }}>返回分镜编辑以调整该镜头。</span>}
-        />
-      ) : null}
-
-      <CollapsiblePrompt label="正向 Prompt" text={pkg.positive_prompt} />
-      <CollapsiblePrompt label="负向 Prompt" text={pkg.negative_prompt} />
-
-      <div style={{ display: "flex", gap: 16, fontSize: 12, flexWrap: "wrap" }} className="text-secondary">
-        <span>分辨率 <strong className="mono">{pkg.width}×{pkg.height}</strong></span>
-        <span>帧数 <strong className="mono">{pkg.frame_count}</strong></span>
-        <span>FPS <strong className="mono">{pkg.fps}</strong></span>
-        <span>Seed <strong className="mono">{pkg.seed}</strong></span>
-        {pkg.steps !== null ? <span>Steps <strong className="mono">{pkg.steps}</strong></span> : null}
-        {pkg.cfg !== null ? <span>CFG <strong className="mono">{pkg.cfg}</strong></span> : null}
-      </div>
-
-      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <Button variant="primary" size="sm" onClick={startRender} disabled={!matched || renderShot.isPending || activeStatus === "pending" || activeStatus === "running"}>
-          {renderShot.isPending || activeStatus === "pending" || activeStatus === "running" ? "渲染中…" : "渲染镜头"}
-        </Button>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          {activeStatus === "success" ? (
-            <video
-              src={outputUrl(projectId, `${pkg.shot_id}.mp4`)}
-              controls
-              loop
-              muted
-              preload="metadata"
-              style={{ width: "100%", maxWidth: 380, borderRadius: 10, border: "1px solid var(--line)" }}
-            />
-          ) : failedMessage ? (
-            <p className="text-danger" style={{ fontSize: 12 }} role="alert">渲染失败：{failedMessage}</p>
-          ) : activeStatus === "pending" || activeStatus === "running" ? (
-            <p className="text-tertiary" style={{ fontSize: 12 }} aria-live="polite">任务已提交，正在等待服务器响应…</p>
-          ) : (
-            <p className="text-tertiary" style={{ fontSize: 12 }}>尚未生成</p>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
-
 export function GenerationStage({ projectId }: { projectId: string }) {
-  const packagesQuery = usePackages(projectId, true);
-  const compilePackages = useCompilePackages(projectId);
-  const renderAll = useRenderAll(projectId);
-  const pipeline = usePipelineStatus(projectId);
-  const { addDockTask, updateDockTask } = useShell();
-  const { toast } = useToast();
-  const { withWait } = useAiWait();
-
-  const data: PackagesResponse | null = packagesQuery.data ?? null;
-  const pkgs = data?.prompt_packages ?? [];
-  const plans = data?.workflow_plans ?? [];
-  const planByShot = new Map(plans.map((p) => [p.shot_id, p]));
-  const matchedCount = plans.filter((p) => p.status === "matched").length;
-  const shotIds = pkgs.map((p) => p.shot_id);
-  const shotTitles = new Map(pkgs.map((p) => [p.shot_id, `${p.width}×${p.height}`]));
-
-  const navigateStage = (stage: StageId) =>
-    window.dispatchEvent(new CustomEvent("movie-agent:navigate-stage", { detail: stage }));
-
-  const startPipeline = () => {
-    // 生成集是后台任务：弹层只覆盖启动请求，之后由编排视图 2s 轮询展示逐步进度
-    withWait(
-      { step: "启动全自动生成", detail: "正在把剩余步骤交给 Lead Agent 编排", expect: "几秒内启动" },
-      () =>
-        fetch(`/api/projects/${encodeSeg(projectId)}/auto_pipeline`, { method: "POST" }).then((resp) => {
-          if (!resp.ok) throw new Error(`启动失败 (${resp.status})`);
-        }),
-    )
-      .then(() => void pipeline.refetch())
-      .catch((err) => toast(err?.message ?? "启动生成集失败", "error"));
-  };
-
-  useInspector(
-    <div style={{ display: "grid", gap: 12 }}>
-      <h3 style={{ fontSize: 14 }}>生成上下文</h3>
-      {data ? (
-        <>
-          <p className="text-secondary" style={{ fontSize: 12 }}>
-            {pkgs.length} 个 Prompt 包 · {matchedCount}/{plans.length} 工作流预检通过。
-          </p>
-          <p className="text-tertiary" style={{ fontSize: 12 }}>
-            单镜头渲染会轮询真实状态；批量渲染为长请求，任务坞只显示“已提交/等待服务器响应”，不显示伪造进度。
-          </p>
-        </>
-      ) : (
-        <p className="text-tertiary" style={{ fontSize: 12 }}>确认镜头表后，这里会显示工作流预检与渲染状态。</p>
-      )}
-    </div>,
-    [data, pkgs.length, matchedCount, plans.length],
-  );
-
-  const startBatch = () => {
-    if (renderAll.isPending) return;
-    const taskId = `batch-${Date.now()}`;
-    addDockTask({ id: taskId, label: "批量渲染全部镜头", status: "submitted", detail: "等待服务器响应" });
-    withWait(
-      {
-        step: "批量渲染全部镜头",
-        detail: "云端模型逐镜头生成中，每个镜头需要数分钟，请耐心等待",
-        expect: "全程可能超过 20 分钟",
-      },
-      () => renderAll.mutateAsync(),
-    )
-      .then((runs) => {
-        const failed = runs.filter((r) => r.status === "failed").length;
-        updateDockTask(taskId, failed > 0 ? "failed" : "success", `${runs.length - failed}/${runs.length} 成功`);
-        toast(failed > 0 ? `批量渲染完成，${failed} 个失败` : "批量渲染全部成功", failed > 0 ? "error" : "success");
-        void packagesQuery.refetch();
-        void pipeline.refetch();
-      })
-      .catch((err) => {
-        updateDockTask(taskId, "failed", err?.message ?? "请求失败");
-        toast("批量渲染请求失败", "error");
-      });
-  };
-
-  if (packagesQuery.isLoading) {
-    return <p className="text-tertiary" aria-live="polite">正在载入生成包…</p>;
+  const qc = useQueryClient();
+  const packages = usePackages(projectId, true);
+  const compile = useCompilePackages(projectId);
+  const delivery = useQuery({ queryKey: ["delivery", projectId], queryFn: () => apiJson<Delivery>(`/api/projects/${encodeSeg(projectId)}/delivery`), retry: false });
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<Error | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+  const data = delivery.isError ? undefined : delivery.data;
+  const busy = downloading || compile.isPending;
+  useInspector(<div className="production-page"><h3>交付说明</h3><p className="text-secondary">ZIP 包包含项目制作资料，以及每个镜头的界面工作流与 API 文件。</p><p className="text-secondary">界面工作流可以拖入 ComfyUI。按依赖清单安装模型，准备首帧后再运行。</p><p className="text-tertiary">在线渲染与粗剪是可选步骤，不影响工作流交付。</p></div>, []);
+  async function download() {
+    setDownloading(true); setDownloadError(null); setDownloaded(false);
+    try {
+      const response = await fetch(`/api/projects/${encodeSeg(projectId)}/export`);
+      if (!response.ok) { const body = await response.json(); throw new Error(body.detail ?? "下载失败"); }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a"); anchor.href = url; anchor.download = `${projectId}_comfyui.zip`; anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setDownloaded(true);
+    } catch (error) { setDownloadError(error instanceof Error ? error : new Error("下载失败")); }
+    finally { setDownloading(false); }
   }
-
-  if (packagesQuery.isError || !data || pkgs.length === 0) {
-    return (
-      <div style={{ display: "grid", gap: 16 }}>
-        <PipelineSwarm
-          projectId={projectId}
-          shotIds={shotIds}
-          shotTitles={shotTitles}
-          onNavigate={navigateStage}
-          onStart={startPipeline}
-        />
-        <div className="card" style={{ padding: 24, display: "grid", gap: 12, maxWidth: 520 }}>
-          <h2 className="display" style={{ fontSize: 20 }}>生成工作台</h2>
-          <p className="text-secondary" style={{ fontSize: 13 }}>
-            还没有编译好的 Prompt 包。确认镜头表后，在此编译工作流参数。
-          </p>
-          {compilePackages.isError ? (
-            <ErrorNotice title="编译生成包失败" error={compilePackages.error} />
-          ) : null}
-          <div>
-            <Button
-              variant="primary"
-              onClick={() =>
-                withWait(
-                  { step: "编译 Prompt 包", detail: "AI 正在为每个镜头拼装 8 层提示词", expect: "通常需要 10~40 秒" },
-                  () => compilePackages.mutateAsync(),
-                ).catch((err) => toast("编译失败：" + (err?.message ?? "未知错误"), "error"))
-              }
-              disabled={compilePackages.isPending}
-            >
-              {compilePackages.isPending ? "正在编译…" : "编译 Prompt 包与工作流"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
+  async function recompile() {
+    try { await compile.mutateAsync(); setDownloaded(false); await qc.invalidateQueries({ queryKey: ["delivery", projectId] }); }
+    catch { /* Mutation error is rendered below. */ }
   }
-
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <PipelineSwarm
-        projectId={projectId}
-        shotIds={shotIds}
-        shotTitles={shotTitles}
-        onNavigate={navigateStage}
-        onStart={startPipeline}
-      />
-
-      <header style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
-        <div>
-          <h2 className="display" style={{ fontSize: 22 }}>生成工作台</h2>
-          <p className="text-secondary" style={{ fontSize: 13, marginTop: 6 }}>
-            {pkgs.length} 个镜头 · {matchedCount} 个工作流预检通过
-          </p>
-        </div>
-        <span style={{ flex: 1 }} />
-        <Button
-          variant="ghost"
-          onClick={() =>
-            withWait(
-              { step: "重新编译 Prompt 包", expect: "通常需要 10~40 秒" },
-              () => compilePackages.mutateAsync(),
-            ).catch((err) => toast("编译失败：" + (err?.message ?? "未知错误"), "error"))
-          }
-          disabled={compilePackages.isPending}
-        >
-          {compilePackages.isPending ? "重新编译中…" : "重新编译"}
-        </Button>
-        <Button variant="primary" onClick={startBatch} disabled={renderAll.isPending || matchedCount === 0}>
-          {renderAll.isPending ? "批量渲染已提交…" : "批量渲染全部"}
-        </Button>
-      </header>
-
-      {pkgs.map((p) => (
-        <ShotPackageCard key={p.shot_id} projectId={projectId} pkg={p} plan={planByShot.get(p.shot_id)} />
-      ))}
-    </div>
-  );
+  return <div className="production-page">
+    <header className="production-heading"><div><p className="eyebrow">HANDOFF / 工作流交付</p><h1 className="display">把这场戏带进 ComfyUI</h1><p className="text-secondary">下载制作包，在你的设备上准备素材、运行镜头工作流。</p></div><Button onClick={() => navigateStage("storyboard")}>返回制作流程</Button></header>
+    {delivery.isLoading ? <p role="status">正在整理交付清单…</p> : null}
+    {delivery.isError ? <ErrorNotice title="制作包尚未就绪" error={delivery.error} actions={<Button onClick={() => void delivery.refetch()}>刷新清单</Button>} /> : null}
+    {data ? <>
+      <section className="delivery-hero">
+        <div><span className="eyebrow">{data.status === "complete" ? "制作文件已生成" : "部分镜头尚未匹配"}</span><h2 className="display">{data.workflow_count} / {data.shot_count} 个镜头工作流</h2><p>{data.ui_workflow_count} 个可视化工作流 · {data.required_asset_count} 张首帧待准备</p><p className="text-secondary">含剧本、角色与场景设定、分镜、提示词、素材需求和依赖说明。</p></div>
+        <div className="delivery-action"><Button variant="primary" onClick={() => void download()} disabled={busy}>{downloading ? "正在打包下载…" : data.status === "complete" ? "下载完整制作包 ZIP" : "下载现有制作资料 ZIP"}</Button><span className="text-tertiary">导出无需连接 ComfyUI 或等待视频渲染</span></div>
+      </section>
+      {downloaded ? <p role="status" className="text-accent">制作包已交给浏览器下载。解压后从 README.md 开始。</p> : null}
+      <p className="delivery-note">文件已编译，尚未在你的 ComfyUI 环境渲染验证。请准备下方首帧素材并核对模型依赖。</p>
+      <section className="production-page"><h2>镜头与工作流</h2>{data.workflows.map(item => {
+        const prompt = packages.data?.prompt_packages.find(p => p.shot_id === item.shot_id);
+        return <article className="delivery-shot" key={item.shot_id}><div className="delivery-shot-heading"><strong className="mono">{item.shot_id}</strong><span className="text-secondary">{item.workflow_id ?? "未匹配模板"}</span><span className="delivery-shot-links">{item.ui_file ? <a href={`/api/projects/${encodeSeg(projectId)}/workflow/${encodeSeg(item.shot_id)}?format=ui`} download>界面工作流</a> : null}{item.api_file ? <a href={`/api/projects/${encodeSeg(projectId)}/workflow/${encodeSeg(item.shot_id)}`} download>API JSON</a> : null}</span></div>{item.reason ? <p className="text-danger">{item.reason}</p> : null}{prompt ? <details><summary>查看提示词与参数 · {prompt.width}×{prompt.height} · {prompt.frame_count} 帧 / {prompt.fps} FPS</summary><pre>{prompt.positive_prompt}</pre><p className="text-secondary">负向提示词</p><pre>{prompt.negative_prompt}</pre></details> : null}</article>;
+      })}</section>
+      {data.assets.length > 0 ? <section className="production-page"><h2>首帧素材准备</h2><p className="text-secondary">按提示词生成或自行准备图片，保持角色外观一致；使用下列文件名放入 ComfyUI/input/。</p>{data.assets.map(asset => <details className="delivery-shot" key={asset.filename}><summary><span className="mono">{asset.filename}</span> · {asset.width}×{asset.height} · 待准备</summary><pre>{asset.positive_prompt}</pre></details>)}</section> : null}
+      <section className="production-page"><h2>模型与节点依赖</h2>{data.dependencies.map(dep => <details className="delivery-shot" key={dep.workflow_id}><summary>{dep.name} · 参考显存 {dep.min_vram_gb} GB</summary><p>模型位置（相对于 ComfyUI/models/）</p><ul>{dep.required_models.map(model => <li className="mono" key={model}>{model}</li>)}</ul><p className="text-secondary">节点：{dep.required_nodes.join("、")}</p></details>)}</section>
+    </> : null}
+    {downloadError ? <ErrorNotice title="下载失败" error={downloadError} /> : null}
+    {compile.isError ? <ErrorNotice title="重新编译失败" error={compile.error} /> : null}
+    <footer className="production-heading"><Button onClick={() => void recompile()} disabled={busy}>{compile.isPending ? "正在编译…" : "重新编译工作流"}</Button><Button variant="ghost" onClick={() => navigateStage("render")}>可选：在线渲染与粗剪</Button></footer>
+  </div>;
 }

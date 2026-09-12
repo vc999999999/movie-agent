@@ -90,17 +90,17 @@ def test_workflow_deterministic_patching_and_immutability(tmp_path):
 
     # 18.4: Verify PatchMap values were correctly injected into target nodes
     # positive_prompt node 40
-    assert patched["40"]["inputs"]["text"] == "Cinematic rain action, photorealistic"
+    assert patched["6"]["inputs"]["text"] == "Cinematic rain action, photorealistic"
     # negative_prompt node 41
-    assert patched["41"]["inputs"]["text"] == "blurry, bad quality"
+    assert patched["7"]["inputs"]["text"] == "blurry, bad quality"
     # sampler node 30
-    assert patched["30"]["inputs"]["seed"] == 12345678
-    assert patched["30"]["inputs"]["width"] == 1280
-    assert patched["30"]["inputs"]["height"] == 720
-    assert patched["30"]["inputs"]["length"] == 84
+    assert patched["3"]["inputs"]["seed"] == 12345678
+    assert patched["50"]["inputs"]["width"] == 1280
+    assert patched["50"]["inputs"]["height"] == 720
+    assert patched["50"]["inputs"]["length"] == 84
 
     # 18.4: Verify other nodes remain untouched
-    assert patched["10"]["inputs"]["model_name"] == "Wan2.1-I2V-14B-720P.safetensors"
+    assert patched["37"]["inputs"]["unet_name"] == "wan2.1_i2v_480p_14B_fp16.safetensors"
 
     # 18.4: Raw template remains untouched in registry
     assert workflow_registry.get_raw_workflow("wan_i2v_v1") == original_raw

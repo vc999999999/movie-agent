@@ -61,6 +61,14 @@ def test_api_project_lifecycle():
     assert confirm_res.status_code == 200
     assert confirm_res.json()["status"] == "success"
 
+    assert client.get(f"/api/projects/{project_id}/screenplay").status_code == 404
+    treatments = client.post(f"/api/projects/{project_id}/treatments/generate").json()
+    selected = treatments["options"][0]["treatment_id"]
+    assert client.post(f"/api/projects/{project_id}/treatments/{selected}/confirm", json={}).status_code == 200
+    assert client.post(f"/api/projects/{project_id}/screenplay/generate").status_code == 200
+
+    assert client.post(f"/api/projects/{project_id}/shots/generate").status_code == 200
+
     # 5. Check screenplay
     sp_res = client.get(f"/api/projects/{project_id}/screenplay")
     assert sp_res.status_code == 200

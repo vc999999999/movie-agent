@@ -4,6 +4,7 @@
 export type ProjectStatus =
   | "collecting"
   | "brief_review"
+  | "director_review"
   | "treatment_review"
   | "screenplay_ready"
   | "shots_review"
