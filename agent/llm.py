@@ -542,7 +542,17 @@ class LLMService:
         if pack:
             user_prompt += f"\n\nRequired Production Pack:\n{pack.model_dump_json(indent=2)}"
         if auteur:
-            user_prompt += f"\n\nSelected Auteur Technique Context:\n{auteur.model_dump_json(indent=2)}"
+            selected_variant = next(v for v in auteur.profile.variants if v.variant_id == auteur.selection.variant_id)
+            selected_context = {
+                "profile_id": auteur.profile.profile_id,
+                "selection": auteur.selection.model_dump(),
+                "selected_variant": selected_variant.model_dump(),
+            }
+            user_prompt += (
+                "\n\nSelected Auteur Technique Context (only this variant is permitted):\n"
+                + json.dumps(selected_context, ensure_ascii=False, indent=2)
+                + "\ntechnique_ids may contain ONLY the technique_id values in selected_variant.techniques."
+            )
 
         # Timing is a production constraint, not an LLM arithmetic task.
         max_duration = min(12.0, pack.generation_recipe.max_duration_seconds if pack else 8.0)
