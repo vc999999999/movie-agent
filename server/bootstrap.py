@@ -31,6 +31,13 @@ def restore_backup() -> None:
     """Optional one-time migration via a Studio secret, never via a public route."""
     encoded = os.environ.pop("PROJECT_MIGRATION_B64", "")
     if not encoded:
+        parts = []
+        index = 0
+        while f"PROJECT_MIGRATION_PART_{index}" in os.environ:
+            parts.append(os.environ.pop(f"PROJECT_MIGRATION_PART_{index}"))
+            index += 1
+        encoded = "".join(parts)
+    if not encoded:
         return
     backup = json.loads(zlib.decompress(base64.b64decode(encoded)))
     if backup.get("version") != 1:
