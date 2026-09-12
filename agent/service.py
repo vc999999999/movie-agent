@@ -9,6 +9,7 @@ import uuid
 from server.config import settings
 from agent.continuity import continuity_checker
 from agent.comfyui import comfyui_client
+from agent.modelscope_gen import modelscope_gen_client
 from server.db import db
 from agent.llm import llm_service
 from agent.models import (
@@ -40,6 +41,7 @@ class ProjectService:
         self.db = db
         self.llm = llm_service
         self.comfyui = comfyui_client
+        self.modelscope = modelscope_gen_client
         self.compiler = prompt_compiler
         self.workflows = workflow_registry
         self.continuity = continuity_checker
@@ -681,6 +683,35 @@ class ProjectService:
             "request_json": target_prompt,
         }
         self.db.create_render_run(run_data)
+
+        # Cloud backend: ModelScope API-Inference (text_to_video, GPU-less hosts)
+        if settings.render_backend == "modelscope":
+            if not self.modelscope.available:
+                error = {"code": "MS_KEY_MISSING", "message": "MODELSCOPE_API_KEY 未配置，无法使用云端生成后端"}
+                self.db.update_render_run(run_id, status="failed", error_json=error)
+                return RenderRun(**self.db.get_render_run(run_id))  # type: ignore[arg-type]
+
+            positive = target_prompt.get("positive_prompt", "")
+            negative = target_prompt.get("negative_prompt", "")
+            asset_url, gen_err = await self.modelscope.generate_video(positive, negative)
+            if gen_err or not asset_url:
+                self.db.update_render_run(
+                    run_id, status="failed",
+                    error_json=gen_err.model_dump() if gen_err else {"code": "MS_OUTPUT_MISSING", "message": "云端任务未返回视频"},
+                )
+                return RenderRun(**self.db.get_render_run(run_id))  # type: ignore[arg-type]
+
+            out_dir = settings.data_dir / project_id / "outputs"
+            dest_video = out_dir / f"{shot_id}.mp4"
+            sha = await self.modelscope.download_asset(asset_url, dest_video)
+            if not sha:
+                error = {"code": "MS_DOWNLOAD_FAILED", "message": "云端视频下载失败"}
+                self.db.update_render_run(run_id, status="failed", error_json=error)
+                return RenderRun(**self.db.get_render_run(run_id))  # type: ignore[arg-type]
+
+            output_info = {"backend": "modelscope", "task_url": asset_url, "file_path": str(dest_video), "sha256": sha}
+            self.db.update_render_run(run_id, status="success", output_json=output_info)
+            return RenderRun(**self.db.get_render_run(run_id))  # type: ignore[arg-type]
 
         # Submit to ComfyUI
         prompt_id, err = await self.comfyui.submit_prompt(workflow_json)

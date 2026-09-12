@@ -59,7 +59,12 @@ class LLMService:
         return bool(self.api_key and len(self.api_key.strip()) > 5)
 
     async def call_llm(self, system_prompt: str, user_prompt: str, temperature: float = 0.4) -> str:
-        """Raw API call to OpenAI-compatible chat endpoint."""
+        """Raw API call to OpenAI-compatible chat endpoint.
+
+        Streamed by default: some providers (ModelScope API-Inference) return
+        an empty body for non-streaming calls, and SSE reassembly works on
+        every OpenAI-compatible endpoint.
+        """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -71,14 +76,34 @@ class LLMService:
                 {"role": "user", "content": user_prompt}
             ],
             "temperature": temperature,
-            "response_format": {"type": "json_object"}
+            "response_format": {"type": "json_object"},
+            "stream": True,
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        content_parts: list[str] = []
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            async with client.stream("POST", f"{self.base_url}/chat/completions", headers=headers, json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[len("data: "):].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    content_parts.append(choices[0].get("delta", {}).get("content") or "")
+        content = "".join(content_parts)
+        if not content.strip():
+            raise RuntimeError(
+                f"LLM streaming returned empty content (model={self.model}, base_url={self.base_url})"
+            )
+        return content
 
     async def structured_call(
         self,

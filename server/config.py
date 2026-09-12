@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     comfyui_mock_mode: bool = False
     comfyui_vram_gb: int = 24
 
+    # Cloud generation backend (ModelScope API-Inference)
+    # "comfyui" (default) or "modelscope"
+    render_backend: str = "comfyui"
+    modelscope_api_key: str = ""
+
     # Paths
     data_dir: Path = BASE_DIR / "projects"
     workflows_dir: Path = BASE_DIR / "workflows"
