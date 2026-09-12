@@ -4,6 +4,7 @@ import { STAGES, type StageId } from "./stages";
 import type { Project } from "../api/types";
 import { StatusBadge } from "../components/StatusBadge";
 import { useShell, type DockTaskStatus } from "./ShellContext";
+import { AiWaitOverlay } from "../components/AiWaitOverlay";
 import "./shell.css";
 
 const STATUS_LABEL: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" | "info" }> = {
@@ -35,7 +36,7 @@ interface StudioShellProps {
 }
 
 export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNewProject, children }: StudioShellProps) {
-  const { inspector, inspectorOpen, setInspectorOpen, dockTasks, clearFinishedDockTasks } = useShell();
+  const { inspector, inspectorOpen, setInspectorOpen, dockTasks, clearFinishedDockTasks, aiWait } = useShell();
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [dockOpen, setDockOpen] = useState(false);
 
@@ -191,6 +192,7 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
           </div>
         ) : null}
       </motion.div>
+      <AiWaitOverlay state={aiWait} />
     </div>
   );
 }

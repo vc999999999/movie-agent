@@ -9,6 +9,7 @@ import type { CreativeBrief, QuestionItem } from "../../api/types";
 import { Button } from "../../components/Button";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { useToast } from "../../components/Toast";
+import { useAiWait } from "../../components/useAiWait";
 import { useInspector } from "../../app/App";
 import { StatusBadge } from "../../components/StatusBadge";
 
@@ -75,6 +76,7 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
   const [form, setForm] = useState<CreativeBrief>(brief);
   const confirmBrief = useConfirmBrief(projectId);
   const { toast } = useToast();
+  const { withWait } = useAiWait();
 
   useEffect(() => setForm(brief), [brief]);
 
@@ -102,9 +104,16 @@ function BriefReview({ projectId, brief }: { projectId: string; brief: CreativeB
       conflict: form.conflict,
       ending: form.ending,
     };
-    confirmBrief.mutate(payload, {
-      onSuccess: () => toast("创作简报已确认，剧本与分镜已生成", "success"),
-    });
+    withWait(
+      {
+        step: "确认简报并生成剧本",
+        detail: "AI 正在拆解场景、锁定角色设定并生成分镜",
+        expect: "通常需要 30~90 秒",
+      },
+      () => confirmBrief.mutateAsync(payload),
+    )
+      .then(() => toast("创作简报已确认，剧本与分镜已生成", "success"))
+      .catch((err) => toast("确认失败：" + (err?.message ?? "未知错误"), "error"));
   };
 
   return (
@@ -185,6 +194,7 @@ export function BriefStage({ projectId }: { projectId: string }) {
   const submitAnswers = useSubmitAnswers(projectId);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const { toast } = useToast();
+  const { withWait } = useAiWait();
 
   const qResp = questionsQuery.data;
 
@@ -235,17 +245,20 @@ export function BriefStage({ projectId }: { projectId: string }) {
 
   const submit = () => {
     if (answeredCount === 0 || submitAnswers.isPending) return;
-    submitAnswers.mutate(
-      Object.entries(answers).map(([field, answer]) => ({ field, answer })),
-      {
-        onSuccess: (data) => {
-          setAnswers({});
-          if (data.status === "brief_review" || data.can_confirm) {
-            toast("要素已完备，请审阅创作简报", "success");
-          }
-        },
-      },
-    );
+    withWait(
+      { step: "分析你的回答", detail: "AI 正在把答案融入创作简报", expect: "通常需要 10~30 秒" },
+      () =>
+        submitAnswers.mutateAsync(
+          Object.entries(answers).map(([field, answer]) => ({ field, answer })),
+        ),
+    )
+      .then((data) => {
+        setAnswers({});
+        if (data.status === "brief_review" || data.can_confirm) {
+          toast("要素已完备，请审阅创作简报", "success");
+        }
+      })
+      .catch((err) => toast("提交失败：" + (err?.message ?? "未知错误"), "error"));
   };
 
   return (

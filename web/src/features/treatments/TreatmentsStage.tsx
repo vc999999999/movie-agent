@@ -13,6 +13,7 @@ import { StageFooter } from "../../components/StageFooter";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useNextStage } from "../../components/nextStage";
 import { useToast } from "../../components/Toast";
+import { useAiWait } from "../../components/useAiWait";
 import { useInspector } from "../../app/App";
 
 const RISK_LABEL: Record<TreatmentOption["production_risk"], { label: string; tone: "success" | "warning" | "danger" }> = {
@@ -95,6 +96,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
   const [diffOnly, setDiffOnly] = useState(false);
   const [pendingOption, setPendingOption] = useState<TreatmentOption | null>(null);
   const { toast } = useToast();
+  const { withWait } = useAiWait();
   const onNextStage = useNextStage("treatments");
 
   const pkg = treatmentsQuery.data ?? null;
@@ -134,15 +136,23 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
 
   const doConfirm = () => {
     if (!pendingOption || confirmTreatment.isPending) return;
-    confirmTreatment.mutate(
-      { treatment_id: pendingOption.treatment_id, production_pack_id: pendingOption.production_pack_id },
+    withWait(
       {
-        onSuccess: () => {
-          setPendingOption(null);
-          toast("导演方案已确认，剧本与分镜已生成", "success");
-        },
+        step: "确认方案并生成剧本",
+        detail: "AI 正在按选定方案生成剧本、场景与分镜",
+        expect: "通常需要 30~90 秒",
       },
-    );
+      () =>
+        confirmTreatment.mutateAsync({
+          treatment_id: pendingOption.treatment_id,
+          production_pack_id: pendingOption.production_pack_id,
+        }),
+    )
+      .then(() => {
+        setPendingOption(null);
+        toast("导演方案已确认，剧本与分镜已生成", "success");
+      })
+      .catch((err) => toast("确认失败：" + (err?.message ?? "未知错误"), "error"));
   };
 
   return (
@@ -180,7 +190,16 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
           <div>
             <Button
               variant="primary"
-              onClick={() => generateTreatments.mutate()}
+              onClick={() =>
+                withWait(
+                  {
+                    step: "生成导演方案",
+                    detail: "AI 正在为同一创意设计 2~3 条不同的结构与风险路径",
+                    expect: "通常需要 20~60 秒",
+                  },
+                  () => generateTreatments.mutateAsync(),
+                ).catch((err) => toast("生成失败：" + (err?.message ?? "未知错误"), "error"))
+              }
               disabled={generateTreatments.isPending}
             >
               {generateTreatments.isPending ? "正在生成方案…" : "生成导演方案"}
@@ -215,7 +234,12 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <Button
             variant="ghost"
-            onClick={() => generateTreatments.mutate()}
+            onClick={() =>
+              withWait(
+                { step: "重新生成导演方案", expect: "通常需要 20~60 秒" },
+                () => generateTreatments.mutateAsync(),
+              ).catch((err) => toast("重新生成失败：" + (err?.message ?? "未知错误"), "error"))
+            }
             disabled={generateTreatments.isPending}
           >
             {generateTreatments.isPending ? "正在重新生成…" : "重新生成方案"}

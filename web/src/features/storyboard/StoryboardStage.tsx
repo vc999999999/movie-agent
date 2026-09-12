@@ -8,6 +8,7 @@ import { StageFooter } from "../../components/StageFooter";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useNextStage } from "../../components/nextStage";
 import { useToast } from "../../components/Toast";
+import { useAiWait } from "../../components/useAiWait";
 import { useInspector } from "../../app/App";
 
 const SHOT_SIZES: ShotSize[] = ["ECU", "CU", "MCU", "MS", "MLS", "WS", "EWS"];
@@ -314,6 +315,7 @@ export function StoryboardStage({ projectId }: { projectId: string }) {
   const [editing, setEditing] = useState(false);
   const { toast } = useToast();
   const onNextStage = useNextStage("storyboard");
+  const { withWait } = useAiWait();
   const projectQuery = useProject(projectId);
   const confirmed = projectQuery.data
     ? ["package_ready", "rendering", "completed", "failed"].includes(projectQuery.data.project.status)
@@ -387,9 +389,16 @@ export function StoryboardStage({ projectId }: { projectId: string }) {
 
   const confirm = () => {
     if (errorCount > 0 || confirmShots.isPending) return;
-    confirmShots.mutate(undefined, {
-      onSuccess: () => toast("镜头表已确认，Prompt 包与工作流已编译", "success"),
-    });
+    withWait(
+      {
+        step: "编译镜头包",
+        detail: "AI 正在锁定每个镜头的提示词并注入工作流参数",
+        expect: "通常需要 10~40 秒",
+      },
+      () => confirmShots.mutateAsync(),
+    )
+      .then(() => toast("镜头表已确认，Prompt 包与工作流已编译", "success"))
+      .catch((err) => toast("确认失败：" + (err?.message ?? "未知错误"), "error"));
   };
 
   return (

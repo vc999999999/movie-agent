@@ -14,6 +14,7 @@ import { ErrorNotice } from "../../components/ErrorNotice";
 import { PipelineSwarm, usePipelineStatus } from "../../components/PipelineSwarm";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useToast } from "../../components/Toast";
+import { useAiWait } from "../../components/useAiWait";
 import { useInspector } from "../../app/App";
 import { useShell } from "../../app/ShellContext";
 
@@ -74,6 +75,7 @@ function ShotPackageCard({
   const runQuery = useRenderRun(renderId);
   const { addDockTask, updateDockTask } = useShell();
   const { toast } = useToast();
+  const { withWait } = useAiWait();
 
   const run = runQuery.data ?? null;
   const matched = plan?.status === "matched";
@@ -90,8 +92,15 @@ function ShotPackageCard({
 
   const startRender = () => {
     if (renderShot.isPending || !matched) return;
-    renderShot.mutate(pkg.shot_id, {
-      onSuccess: (r) => {
+    withWait(
+      {
+        step: `渲染镜头 ${pkg.shot_id}`,
+        detail: "云端视频模型正在生成该镜头画面，单镜头通常需要 3~10 分钟",
+        expect: "免费档视频队列偶有排队",
+      },
+      () => renderShot.mutateAsync(pkg.shot_id),
+    )
+      .then((r) => {
         setRenderId(r.id);
         setInitialStatus(r.status);
         addDockTask({
@@ -101,9 +110,8 @@ function ShotPackageCard({
         });
         if (r.status === "success") toast(`${pkg.shot_id} 渲染成功`, "success");
         if (r.status === "failed") toast(`${pkg.shot_id} 渲染失败`, "error");
-      },
-      onError: () => toast("渲染请求失败", "error"),
-    });
+      })
+      .catch(() => toast("渲染请求失败", "error"));
   };
 
   const activeStatus = run?.status ?? (renderShot.data && renderId === renderShot.data.id ? renderShot.data.status : initialStatus);
@@ -186,6 +194,7 @@ export function GenerationStage({ projectId }: { projectId: string }) {
   const pipeline = usePipelineStatus(projectId);
   const { addDockTask, updateDockTask } = useShell();
   const { toast } = useToast();
+  const { withWait } = useAiWait();
 
   const data: PackagesResponse | null = packagesQuery.data ?? null;
   const pkgs = data?.prompt_packages ?? [];
@@ -199,9 +208,16 @@ export function GenerationStage({ projectId }: { projectId: string }) {
     window.dispatchEvent(new CustomEvent("movie-agent:navigate-stage", { detail: stage }));
 
   const startPipeline = () => {
-    fetch(`/api/projects/${encodeSeg(projectId)}/auto_pipeline`, { method: "POST" })
+    // 生成集是后台任务：弹层只覆盖启动请求，之后由编排视图 2s 轮询展示逐步进度
+    withWait(
+      { step: "启动全自动生成", detail: "正在把剩余步骤交给 Lead Agent 编排", expect: "几秒内启动" },
+      () =>
+        fetch(`/api/projects/${encodeSeg(projectId)}/auto_pipeline`, { method: "POST" }).then((resp) => {
+          if (!resp.ok) throw new Error(`启动失败 (${resp.status})`);
+        }),
+    )
       .then(() => void pipeline.refetch())
-      .catch(() => toast("启动生成集失败", "error"));
+      .catch((err) => toast(err?.message ?? "启动生成集失败", "error"));
   };
 
   useInspector(
@@ -227,19 +243,25 @@ export function GenerationStage({ projectId }: { projectId: string }) {
     if (renderAll.isPending) return;
     const taskId = `batch-${Date.now()}`;
     addDockTask({ id: taskId, label: "批量渲染全部镜头", status: "submitted", detail: "等待服务器响应" });
-    renderAll.mutate(undefined, {
-      onSuccess: (runs) => {
+    withWait(
+      {
+        step: "批量渲染全部镜头",
+        detail: "云端模型逐镜头生成中，每个镜头需要数分钟，请耐心等待",
+        expect: "全程可能超过 20 分钟",
+      },
+      () => renderAll.mutateAsync(),
+    )
+      .then((runs) => {
         const failed = runs.filter((r) => r.status === "failed").length;
         updateDockTask(taskId, failed > 0 ? "failed" : "success", `${runs.length - failed}/${runs.length} 成功`);
         toast(failed > 0 ? `批量渲染完成，${failed} 个失败` : "批量渲染全部成功", failed > 0 ? "error" : "success");
         void packagesQuery.refetch();
         void pipeline.refetch();
-      },
-      onError: (err) => {
-        updateDockTask(taskId, "failed", err.message);
+      })
+      .catch((err) => {
+        updateDockTask(taskId, "failed", err?.message ?? "请求失败");
         toast("批量渲染请求失败", "error");
-      },
-    });
+      });
   };
 
   if (packagesQuery.isLoading) {
@@ -265,7 +287,16 @@ export function GenerationStage({ projectId }: { projectId: string }) {
             <ErrorNotice title="编译生成包失败" error={compilePackages.error} />
           ) : null}
           <div>
-            <Button variant="primary" onClick={() => compilePackages.mutate()} disabled={compilePackages.isPending}>
+            <Button
+              variant="primary"
+              onClick={() =>
+                withWait(
+                  { step: "编译 Prompt 包", detail: "AI 正在为每个镜头拼装 8 层提示词", expect: "通常需要 10~40 秒" },
+                  () => compilePackages.mutateAsync(),
+                ).catch((err) => toast("编译失败：" + (err?.message ?? "未知错误"), "error"))
+              }
+              disabled={compilePackages.isPending}
+            >
               {compilePackages.isPending ? "正在编译…" : "编译 Prompt 包与工作流"}
             </Button>
           </div>
@@ -292,7 +323,16 @@ export function GenerationStage({ projectId }: { projectId: string }) {
           </p>
         </div>
         <span style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={() => compilePackages.mutate()} disabled={compilePackages.isPending}>
+        <Button
+          variant="ghost"
+          onClick={() =>
+            withWait(
+              { step: "重新编译 Prompt 包", expect: "通常需要 10~40 秒" },
+              () => compilePackages.mutateAsync(),
+            ).catch((err) => toast("编译失败：" + (err?.message ?? "未知错误"), "error"))
+          }
+          disabled={compilePackages.isPending}
+        >
           {compilePackages.isPending ? "重新编译中…" : "重新编译"}
         </Button>
         <Button variant="primary" onClick={startBatch} disabled={renderAll.isPending || matchedCount === 0}>
