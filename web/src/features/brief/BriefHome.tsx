@@ -44,6 +44,7 @@ export function BriefHome({ onCreated, onOpen }: BriefHomeProps) {
     <div style={{ maxWidth: 880, margin: "0 auto", padding: "72px 24px 64px", display: "grid", gap: 32 }}>
       <div style={{ textAlign: "center", display: "grid", gap: 12 }}>
         <DemoNotice />
+        <span className="display text-accent" style={{ fontSize: 20, letterSpacing: "0.2em" }}>幕间</span>
         <h1 className="display" style={{ fontSize: 34, fontWeight: 600 }}>
           你脑海里的第一场戏是什么？
         </h1>

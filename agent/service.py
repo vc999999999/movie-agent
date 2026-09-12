@@ -635,7 +635,7 @@ class ProjectService:
         matched_count = sum(1 for p in plans if p.get("status") == "matched")
 
         lines = [
-            f"# 🎬 《{bible.title}》 电影 Agent 制作与执行报告",
+            f"# 🎬 《{bible.title}》 幕间 制作与执行报告",
             f"\n- **项目 ID**: `{project['id']}`",
             f"- **成片时长**: 目标 {bible.target_duration} 秒 | 镜头总计 {total_dur:.1f} 秒 (误差: {abs(total_dur - bible.target_duration):.2f}s)",
             f"- **画面比例**: {bible.aspect_ratio}",

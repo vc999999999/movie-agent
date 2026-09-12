@@ -17,8 +17,8 @@ class ImmutableStaticFiles(StaticFiles):
         return response
 
 app = FastAPI(
-    title="Movie Agent - AI Film Production System",
-    description="从一句话创意到分镜表与 ComfyUI 工作流参数包的电影 Agent 系统",
+    title="幕间 - AI Film Production System",
+    description="从一句话创意到分镜表与 ComfyUI 工作流参数包的幕间 系统",
     version="0.2.0",
 )
 
@@ -46,4 +46,4 @@ async def root():
     index_file = static_root / "index.html"
     if index_file.exists():
         return FileResponse(index_file, headers={"Cache-Control": "no-cache"})
-    return {"message": "Movie Agent API is running. Please access /docs for API documentation."}
+    return {"message": "幕间 API is running. Please access /docs for API documentation."}

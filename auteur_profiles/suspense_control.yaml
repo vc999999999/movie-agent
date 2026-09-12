@@ -1,0 +1,60 @@
+profile_id: suspense_control
+version: 1.0.0
+director_name: 悬疑信息控制
+label: 证据、视点与揭示顺序
+description: 控制观众何时知道什么，用可见证据与视点切换建立紧张感。
+disclaimer: 幕间原创技法模板；以可执行的叙事、镜头与剪辑规则组织场景。
+default_variant_id: audience_advantage
+variants:
+- variant_id: audience_advantage
+  name: 观众先知
+  reference_works: []
+  best_for:
+  - 危机
+  - 潜伏
+  - 营救
+  techniques:
+  - technique_id: visible_threat
+    name: 先展示威胁
+    domain: narrative
+    instruction: 先给观众一个清晰威胁，再展示尚未察觉的人物向其靠近。
+    viewer_effect: 建立观众与人物的信息差。
+    generation_note: 威胁用实体状态表达，不依赖倒计时文字或额外群演。 视频镜头不超过所选模板上限。
+  - technique_id: distance_markers
+    name: 距离标记
+    domain: camera
+    instruction: 以门口、转角等固定参照物表现人物和威胁的距离变化。
+    viewer_effect: 使危险逼近可追踪。
+    generation_note: 保持轴线和运动方向；每镜一个空间变化。 视频镜头不超过所选模板上限。
+  - technique_id: interrupted_action
+    name: 动作前停顿
+    domain: editing
+    instruction: 在关键接触前切向人物反应或威胁细节，再回到动作结果。
+    viewer_effect: 延迟结果并保持因果可读。
+    generation_note: 不要要求单镜完成复杂接触，把前因与结果拆开。 视频镜头不超过所选模板上限。
+- variant_id: evidence_reveal
+  name: 证据重释
+  reference_works: []
+  best_for:
+  - 侦探
+  - 谜题
+  - 反转
+  techniques:
+  - technique_id: bounded_viewpoint
+    name: 受限视点
+    domain: camera
+    instruction: 只展示主角能够看到的证据，用遮挡保留一个明确的信息缺口。
+    viewer_effect: 让观众与人物共同推理。
+    generation_note: 遮挡物固定，避免模糊画面或不可读小字承载线索。 视频镜头不超过所选模板上限。
+  - technique_id: single_clue
+    name: 单一证据
+    domain: narrative
+    instruction: 每个线索镜头只推进一个可观察事实，保留物件位置与状态。
+    viewer_effect: 减少歧义，方便回看。
+    generation_note: 采用物件特写和角色反应两个镜头。 视频镜头不超过所选模板上限。
+  - technique_id: context_reveal
+    name: 补全上下文
+    domain: editing
+    instruction: 重访已建立的构图，扩大视野补全原因，而不篡改此前事实。
+    viewer_effect: 通过新上下文产生合理反转。
+    generation_note: 使用同一首帧参考和场景设定，分开生成宽窄景别。 视频镜头不超过所选模板上限。

@@ -1,0 +1,60 @@
+profile_id: urban_emotion
+version: 1.0.0
+director_name: 都市情绪
+label: 距离、错过与情绪余韵
+description: 用空间距离、物件和反应镜头表现亲密关系，适合城市爱情与孤独主题。
+disclaimer: 幕间原创技法模板；以可执行的叙事、镜头与剪辑规则组织场景。
+default_variant_id: missed_connection
+variants:
+- variant_id: missed_connection
+  name: 擦肩与错过
+  reference_works: []
+  best_for:
+  - 都市爱情
+  - 重逢
+  - 单人孤独
+  techniques:
+  - technique_id: separated_frames
+    name: 隔开的同框
+    domain: camera
+    instruction: 用门框、玻璃或前景将人物分隔，保留明确的视线方向。
+    viewer_effect: 让关系距离可见。
+    generation_note: 固定或缓慢横移；人物不超过两人，反射不承担身份信息。 视频镜头不超过所选模板上限。
+  - technique_id: delayed_response
+    name: 延后的反应
+    domain: editing
+    instruction: 先展示一句话或一个动作造成的变化，再切接收者的停顿与反应。
+    viewer_effect: 让未说出口的情绪停留。
+    generation_note: 动作与反应分镜生成，每镜一个动作，声音后期添加。 视频镜头不超过所选模板上限。
+  - technique_id: absence_object
+    name: 缺席的物件
+    domain: narrative
+    instruction: 用空座位、留下的杯子等已建立的物件收尾，不新增人物或支线。
+    viewer_effect: 以缺席留下余韵。
+    generation_note: 物件外观与位置保持一致，不依赖可读文字。 视频镜头不超过所选模板上限。
+- variant_id: memory_echo
+  name: 记忆回声
+  reference_works: []
+  best_for:
+  - 回忆
+  - 告别
+  - 情绪短片
+  techniques:
+  - technique_id: object_match
+    name: 物件匹配切换
+    domain: editing
+    instruction: 用相同物件和构图连接当下与回忆，以不同光线清晰区分时间。
+    viewer_effect: 让过去与现在产生联系。
+    generation_note: 时段分开生成，固定物件外观，避免画面内变形。 视频镜头不超过所选模板上限。
+  - technique_id: held_gaze
+    name: 保留凝视
+    domain: camera
+    instruction: 在人物意识到变化时保持稳定中近景，让视线或呼吸完成情绪转折。
+    viewer_effect: 让细微反应成为重点。
+    generation_note: 单镜仅一个微动作，使用稳定首帧，不要求精细口型。 视频镜头不超过所选模板上限。
+  - technique_id: ambient_return
+    name: 环境声回返
+    domain: sound
+    instruction: 让已出现的环境声在结尾重现，连接同一地点不同时刻。
+    viewer_effect: 声音成为记忆提示。
+    generation_note: 仅写入声音设计，交由后期添加，不当作视频模型动作。 视频镜头不超过所选模板上限。

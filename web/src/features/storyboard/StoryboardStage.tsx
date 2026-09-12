@@ -15,7 +15,7 @@ const SHOT_SIZES: ShotSize[] = ["ECU", "CU", "MCU", "MS", "MLS", "WS", "EWS"];
 
 interface UnifiedIssue {
   key: string;
-  source: "连续性" | "导演语法" | "名导技法";
+  source: "连续性" | "导演语法" | "导演技法";
   severity: "warning" | "error";
   shotIds: string[];
   message: string;
@@ -48,7 +48,7 @@ function unifyIssues(
     })),
     ...auteur.map((i, n) => ({
       key: `a${n}`,
-      source: "名导技法" as const,
+      source: "导演技法" as const,
       severity: i.severity,
       shotIds: i.shot_ids,
       message: `[${i.code}] ${i.message}`,

@@ -91,7 +91,7 @@ export function AuteurStage({ projectId }: { projectId: string }) {
           ) : null}
         </>
       ) : (
-        <p className="text-tertiary" style={{ fontSize: 12 }}>选择一个名导档案与代表作模式后，这里会预演技法如何改变场景。</p>
+        <p className="text-tertiary" style={{ fontSize: 12 }}>选择一个导演模板与叙事模式后，这里会预演技法如何改变场景。</p>
       )}
     </div>,
     [variant, intensity, preserve, previewTechnique],
@@ -120,14 +120,14 @@ export function AuteurStage({ projectId }: { projectId: string }) {
       <header>
         <h2 className="display" style={{ fontSize: 22 }}>选择导演模板</h2>
         <p className="text-secondary" style={{ fontSize: 13, marginTop: 6 }}>
-          选择一套研究性归纳的导演技法模式，控制应用强度与必须保留的内容。
+          选择一套导演技法模板，控制应用强度与必须保留的内容。
         </p>
       </header>
 
-      <div className="card" style={{ padding: 18, display: "grid", gap: 10 }}><h3>原创导演方案</h3><p className="text-secondary">保留你的剧情，由 Agent 设计叙事结构，不套用名导技法。</p><div><Button onClick={() => apply(true)} disabled={busy}>采用原创模式，生成方案</Button></div></div>
+      <div className="card" style={{ padding: 18, display: "grid", gap: 10 }}><h3>原创导演方案</h3><p className="text-secondary">保留你的剧情，由幕间 设计叙事结构，不套用导演技法。</p><div><Button onClick={() => apply(true)} disabled={busy}>采用原创模式，生成方案</Button></div></div>
       {generate.isError ? <ErrorNotice title="导演方案生成失败" error={generate.error} /> : null}
       {profilesQuery.isError ? (
-        <ErrorNotice title="无法载入名导档案" error={profilesQuery.error} />
+        <ErrorNotice title="无法载入导演模板" error={profilesQuery.error} />
       ) : null}
 
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
@@ -164,8 +164,8 @@ export function AuteurStage({ projectId }: { projectId: string }) {
       </div>
 
       {profile ? (
-        <section aria-label="代表作模式" style={{ display: "grid", gap: 12 }}>
-          <h3 style={{ fontSize: 15 }}>代表作模式</h3>
+        <section aria-label="叙事模式" style={{ display: "grid", gap: 12 }}>
+          <h3 style={{ fontSize: 15 }}>叙事模式</h3>
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
             {profile.variants.map((v) => {
               const isActive = variant?.variant_id === v.variant_id;
@@ -189,7 +189,7 @@ export function AuteurStage({ projectId }: { projectId: string }) {
                     {isActive ? <StatusBadge tone="accent" label="当前" /> : null}
                   </div>
                   <span className="text-tertiary" style={{ fontSize: 12 }}>
-                    参考作品：{v.reference_works.join("、")}
+                    {v.reference_works.length > 0 ? `参考作品：${v.reference_works.join("、")}` : "幕间原创叙事模式"}
                   </span>
                   <span className="text-secondary" style={{ fontSize: 12 }}>
                     适合：{v.best_for.join("、")}
@@ -255,14 +255,14 @@ export function AuteurStage({ projectId }: { projectId: string }) {
             </div>
 
             {applyProfile.isError ? (
-              <ErrorNotice title="应用名导技法失败" error={applyProfile.error} />
+              <ErrorNotice title="应用导演技法失败" error={applyProfile.error} />
             ) : null}
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               {existing ? (
                 <Button
                   variant="danger"
-                  onClick={() => clearProfile.mutate(undefined, { onSuccess: () => toast("已移除名导技法", "info") })}
+                  onClick={() => clearProfile.mutate(undefined, { onSuccess: () => toast("已移除导演技法", "info") })}
                   disabled={clearProfile.isPending}
                 >
                   移除技法

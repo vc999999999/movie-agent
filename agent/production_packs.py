@@ -190,7 +190,7 @@ class AuteurProfileRegistry:
                     severity="error",
                     code="AUTEUR_PROFILE_MISMATCH",
                     shot_ids=[shot.shot_id],
-                    message="镜头没有绑定当前名导技法档案",
+                    message="镜头没有绑定当前导演技法档案",
                     suggested_fix="重新应用当前档案生成镜头，或修正镜头的 profile/variant ID",
                 ))
             unknown = set(shot.technique_ids) - valid_ids
@@ -200,7 +200,7 @@ class AuteurProfileRegistry:
                     code="UNKNOWN_AUTEUR_TECHNIQUE",
                     shot_ids=[shot.shot_id],
                     message=f"镜头引用了不存在的技法：{', '.join(sorted(unknown))}",
-                    suggested_fix="只使用当前代表作模式中声明的 technique_id",
+                    suggested_fix="只使用当前叙事模式中声明的 technique_id",
                 ))
             used_ids.update(shot.technique_ids)
 
@@ -209,7 +209,7 @@ class AuteurProfileRegistry:
                 severity="error",
                 code="AUTEUR_TECHNIQUE_UNUSED",
                 shot_ids=[shot.shot_id for shot in shots],
-                message="选择了名导技法档案，但镜头表没有应用任何具体技法",
+                message="选择了导演技法档案，但镜头表没有应用任何具体技法",
                 suggested_fix="至少为关键镜头分配一个 technique_id 并说明作用",
             ))
         elif context.selection.intensity == "strong" and len(used_ids) < min(2, len(valid_ids)):

@@ -11,7 +11,7 @@ from agent.service import project_service
 from agent.workflow import workflow_registry
 
 async def run_cli():
-    parser = argparse.ArgumentParser(description="Movie Agent CLI - AI Film Production Agent")
+    parser = argparse.ArgumentParser(description="幕间 CLI - AI Film Production Agent")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Command: create
@@ -47,7 +47,7 @@ async def run_cli():
     workflow_registry.load_all()
 
     if args.command == "create":
-        print(f"\n🎬 正在创建电影 Agent 项目...")
+        print(f"\n🎬 正在创建幕间 项目...")
         project = project_service.create_project(args.idea, args.title)
         pid = project["id"]
         print(f"✅ 项目已创建! ID: {pid}")

@@ -79,7 +79,7 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
   return (
     <div className={shellClass}>
       <header className="shell-topbar glass-strong">
-        <strong className="display" style={{ fontSize: 16 }}>电影 Agent</strong><DemoNotice />
+        <strong className="display" style={{ fontSize: 16 }}>幕间</strong><DemoNotice />
         {project ? (
           <>
             <span className="mono text-tertiary project-id" style={{ fontSize: 12 }}>{project.id}</span>

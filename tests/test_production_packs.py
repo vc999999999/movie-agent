@@ -71,3 +71,29 @@ async def test_treatment_path_generates_grammar_bound_shots():
     pack = production_pack_registry.get(selected.production_pack_id)
     plans = project_service.get_packages(project["id"])["workflow_plans"]
     assert plans and all(plan["workflow_id"] == pack.generation_recipe.workflow_id for plan in plans)
+
+import pytest
+
+NEW_MODES = [
+    ('urban_emotion', 'missed_connection'), ('urban_emotion', 'memory_echo'),
+    ('suspense_control', 'audience_advantage'), ('suspense_control', 'evidence_reveal'),
+    ('symmetric_stage', 'ordered_tableau'), ('symmetric_stage', 'lateral_chapters'),
+    ('everyday_observation', 'domestic_gesture'), ('everyday_observation', 'place_after_people'),
+]
+
+@pytest.mark.parametrize('profile_id,variant_id', NEW_MODES)
+async def test_new_director_modes_compile_without_cross_mode_tags(profile_id, variant_id):
+    pid = project_service.create_project('30秒温情短片，一位店员在雨夜收留小猫')['id']
+    await project_service.analyze_input(pid)
+    await project_service.confirm_brief(pid)
+    context = project_service.apply_auteur_profile(pid, profile_id, variant_id, 'strong', ['保留小猫'])
+    options = await project_service.generate_treatments(pid)
+    await project_service.confirm_treatment(pid, options.options[-1].treatment_id)
+    await project_service.run_auto_pipeline(pid)
+    shots = [ShotSpec(**s) for s in project_service.get_shots(pid)]
+    assert shots and sum(s.duration_seconds for s in shots) == pytest.approx(30)
+    assert auteur_profile_registry.validate_shots(shots, context) == []
+    assert all(p['status'] == 'matched' for p in project_service.get_packages(pid)['workflow_plans'])
+    other = next(v for v in context.profile.variants if v.variant_id != variant_id)
+    shots[0].technique_ids = [other.techniques[0].technique_id]
+    assert 'UNKNOWN_AUTEUR_TECHNIQUE' in {i.code for i in auteur_profile_registry.validate_shots(shots, context)}

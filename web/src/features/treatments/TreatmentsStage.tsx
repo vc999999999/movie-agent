@@ -74,7 +74,7 @@ function TreatmentCard({
       {!diffOnly ? row("视觉策略", option.visual_strategy) : null}
       {option.technique_plan.length > 0
         ? row(
-            "名导技法计划",
+            "导演技法计划",
             <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {option.technique_plan.map((t) => (
                 <span key={t} className="tag" style={{ fontSize: 11 }}>{techniqueNames.get(t) ?? t}</span>
