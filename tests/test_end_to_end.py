@@ -66,7 +66,7 @@ async def test_case_2_60s_two_characters_with_dialogue():
     assert len(packages["prompt_packages"]) == len(shots)
 
 @pytest.mark.asyncio
-async def test_case_3_complete_pipeline_with_render_and_rough_cut():
+async def test_case_3_complete_pipeline_with_render_and_rough_cut(reference_bytes):
     """Case 3: 完整管线测试：创意 -> 简报 -> 分镜 -> Prompt编译 -> PatchMap注入 -> 渲染 -> FFmpeg粗剪短片合成."""
     source_text = "做一个45秒雨夜侦探追凶预告片"
     project = project_service.create_project(source_text, title="全流程测试预告片")
@@ -91,6 +91,9 @@ async def test_case_3_complete_pipeline_with_render_and_rough_cut():
             wf_path = plan["patched_workflow_path"]
             assert wf_path is not None
             assert os.path.exists(wf_path)
+
+    from conftest import bind_reference
+    await bind_reference(project_service, pid, reference_bytes)
 
     # 4. Render all shots
     render_runs = await project_service.render_all_shots(pid)

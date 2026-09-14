@@ -122,6 +122,14 @@ class ModelScopeGenClient:
             return None, err
         return result, None
 
+    async def submit_video(self, prompt: str, negative_prompt: str = ""):
+        return await self._submit("videos/generations", {"model": VIDEO_MODEL, "prompt": prompt[:2000], "negative_prompt": negative_prompt[:2000]},
+                                  async_mode=False, extra_headers={"X-ModelScope-DataInspection": '{"input": true, "output": true}'})
+
+    async def poll_video(self, task_id: str):
+        return await self._poll(task_id, "video_generation", 1800,
+                                extract=lambda data: (data.get("output_videos") or [None])[0])
+
     async def download_asset(self, url: str, dest_path: Path) -> Optional[str]:
         """Download a generated asset to dest_path, return sha256 hex digest."""
         dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -168,14 +176,16 @@ class ModelScopeGenClient:
                 # Some providers return 200-without-task or 4xx/5xx bodies
                 code = body.get("errors", {}).get("code") or body.get("error", {}).get("code")
                 message = str(body.get("errors", {}).get("message") or body.get("error", {}).get("message") or body)[:500]
-                retryable = code == 429 or "429" in str(code)
+                retryable = resp.status_code == 429
                 return None, ErrorDetail(
-                    code=f"MS_SUBMIT_HTTP_{resp.status_code}",
+                    code=f"MS_SUBMIT_HTTP_{resp.status_code}" if 400 <= resp.status_code < 500 else "SUBMISSION_UNCERTAIN",
                     message=message or f"ModelScope HTTP {resp.status_code}",
                     details={"body": message},
                     retryable=retryable,
                 )
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except (httpx.TimeoutException, httpx.ReadError, ValueError) as e:
+            return None, ErrorDetail(code="SUBMISSION_UNCERTAIN", message=str(e))
+        except httpx.ConnectError as e:
             return None, ErrorDetail(
                 code="MS_CONNECTION_ERROR",
                 message=f"无法连接 ModelScope API-Inference: {e}",

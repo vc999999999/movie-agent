@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -25,6 +27,11 @@ def init_db(db_path: Optional[Path] = None) -> None:
     conn = get_db_connection(db_path)
     with conn:
         conn.executescript("""
+        CREATE TABLE IF NOT EXISTS execution_leases (
+            project_id TEXT PRIMARY KEY,
+            owner TEXT NOT NULL,
+            expires_at REAL NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
             status TEXT NOT NULL,
@@ -87,8 +94,78 @@ class Database:
         self.db_path = db_path or settings.sqlite_db_path
         init_db(self.db_path)
 
-    def _conn(self) -> sqlite3.Connection:
-        return get_db_connection(self.db_path)
+    @contextmanager
+    def _conn(self):
+        from agent.execution import lease_context, LeaseLost
+        conn = get_db_connection(self.db_path)
+        try:
+            with conn:
+                entry = lease_context.get()
+                if entry and entry[0] == str(self.db_path):
+                    conn.execute("BEGIN IMMEDIATE")
+                    row = conn.execute("SELECT owner, expires_at FROM execution_leases WHERE project_id=?", (entry[1],)).fetchone()
+                    if not row or row["owner"] != entry[2] or row["expires_at"] <= time.time():
+                        raise LeaseLost("执行租约已失效，请恢复任务")
+                yield conn
+        finally:
+            conn.close()
+
+    def acquire_lease(self, project_id: str, owner: str) -> None:
+        from agent.execution import ProjectBusy
+        conn = get_db_connection(self.db_path)
+        try:
+            with conn:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute("SELECT * FROM execution_leases WHERE project_id=?", (project_id,)).fetchone()
+                if row and row["expires_at"] > time.time():
+                    raise ProjectBusy("项目正在执行，请等待完成后再修改或重试")
+                conn.execute("INSERT OR REPLACE INTO execution_leases VALUES (?, ?, ?)", (project_id, owner, time.time() + 60))
+        finally:
+            conn.close()
+
+    def assert_lease(self, project_id: str, owner: str) -> None:
+        from agent.execution import LeaseLost
+        conn = get_db_connection(self.db_path)
+        try:
+            row = conn.execute("SELECT * FROM execution_leases WHERE project_id=?", (project_id,)).fetchone()
+            if not row or row["owner"] != owner or row["expires_at"] <= time.time():
+                raise LeaseLost("执行租约已失效，请恢复任务")
+        finally:
+            conn.close()
+
+    def renew_lease(self, project_id: str, owner: str) -> None:
+        from agent.execution import LeaseLost
+        conn = get_db_connection(self.db_path)
+        try:
+            with conn:
+                changed = conn.execute("UPDATE execution_leases SET expires_at=? WHERE project_id=? AND owner=? AND expires_at>?",
+                                       (time.time() + 60, project_id, owner, time.time())).rowcount
+                if not changed:
+                    raise LeaseLost("执行租约已失效")
+        finally:
+            conn.close()
+
+    def release_lease(self, project_id: str, owner: str) -> None:
+        conn = get_db_connection(self.db_path)
+        try:
+            with conn:
+                conn.execute("DELETE FROM execution_leases WHERE project_id=? AND owner=?", (project_id, owner))
+        finally:
+            conn.close()
+
+    def lease_active(self, project_id: str) -> bool:
+        with self._conn() as conn:
+            return conn.execute("SELECT 1 FROM execution_leases WHERE project_id=? AND expires_at>?", (project_id, time.time())).fetchone() is not None
+
+    def artifact_versions(self, project_id: str) -> dict[str, int]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT kind, MAX(version) AS version FROM artifacts WHERE project_id=? AND status!='stale' GROUP BY kind", (project_id,)).fetchall()
+            return {r["kind"]: r["version"] for r in rows}
+
+    def list_artifacts(self, project_id: str, kind: str) -> list[dict[str, Any]]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT version, content_json, created_at FROM artifacts WHERE project_id=? AND kind=? ORDER BY version", (project_id, kind)).fetchall()
+            return [{"version": r["version"], "content": json.loads(r["content_json"]), "created_at": r["created_at"]} for r in rows]
 
     # Projects
     def create_project(self, project_id: str, title: Optional[str], source_text: str, brief_dict: Optional[dict[str, Any]] = None) -> dict[str, Any]:
@@ -176,12 +253,17 @@ class Database:
     # Artifacts
     def save_artifact(self, project_id: str, kind: str, content: dict[str, Any] | list[Any], status: str = "draft") -> int:
         with self._conn() as conn:
-            conn.execute("BEGIN IMMEDIATE")
+            if not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
             row = conn.execute("SELECT MAX(version) as max_v FROM artifacts WHERE project_id = ? AND kind = ?", (project_id, kind)).fetchone()
             next_v = (row["max_v"] or 0) + 1
             art_id = f"art_{kind}_{next_v}_{uuid.uuid4().hex[:6]}"
             now = utc_now()
             content_json = json.dumps(content, ensure_ascii=False)
+            if kind in ("shot_list", "screenplay", "project_bible", "creative_brief", "hard_constraints"):
+                prior = conn.execute("SELECT content_json FROM artifacts WHERE project_id=? AND kind=? AND status!='stale' ORDER BY version DESC LIMIT 1", (project_id, kind)).fetchone()
+                if not prior or json.loads(prior["content_json"]) != content:
+                    conn.execute("UPDATE artifacts SET status='stale' WHERE project_id=? AND kind IN ('quality_review','rough_cut','comparison_frames')", (project_id,))
             conn.execute(
                 "INSERT INTO artifacts (id, project_id, kind, version, content_json, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (art_id, project_id, kind, next_v, content_json, status, now)
@@ -233,12 +315,13 @@ class Database:
         with self._conn() as conn:
             conn.execute(
                 """UPDATE render_runs SET status = ?, prompt_id = COALESCE(?, prompt_id),
-                   output_json = COALESCE(?, output_json), error_json = COALESCE(?, error_json),
+                   output_json = COALESCE(?, output_json), error_json = CASE WHEN ? = 'success' THEN NULL ELSE COALESCE(?, error_json) END,
                    finished_at = CASE WHEN ? IN ('success', 'failed') THEN ? ELSE finished_at END
                    WHERE id = ?""",
                 (
                     status, prompt_id,
                     json.dumps(output_json, ensure_ascii=False) if output_json else None,
+                    status,
                     json.dumps(error_json, ensure_ascii=False) if error_json else None,
                     status, now, run_id
                 )

@@ -1,3 +1,4 @@
+import { ProductionTools } from "../../components/ProductionTools";
 import { useEffect, useState } from "react";
 import { encodeSeg, outputUrl } from "../../api/client";
 import {
@@ -301,6 +302,7 @@ export function GenerationStage({ projectId }: { projectId: string }) {
             </Button>
           </div>
         </div>
+        <ProductionTools projectId={projectId} />
       </div>
     );
   }
@@ -339,6 +341,7 @@ export function GenerationStage({ projectId }: { projectId: string }) {
           {renderAll.isPending ? "批量渲染已提交…" : "批量渲染全部"}
         </Button>
       </header>
+      <ProductionTools projectId={projectId} />
 
       {pkgs.map((p) => (
         <ShotPackageCard key={p.shot_id} projectId={projectId} pkg={p} plan={planByShot.get(p.shot_id)} />

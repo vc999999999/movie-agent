@@ -78,7 +78,7 @@ dy/
 │   ├── flux_character_sheet_v1/ # Flux 角色与场景概念图工作流
 │   ├── wan_i2v_v1/              # Wan2.1 图生视频工作流
 │   └── cogvideox_t2v_v1/        # CogVideoX 文生视频工作流
-├── tests/                    # 21 个测试函数覆盖核心流程
+├── tests/                    # 核心流程回归测试
 │   ├── test_questions.py      # 反问引擎与优先级计算测试
 │   ├── test_prompt_compiler.py# 提示词分层与角色锁定测试
 │   ├── test_workflow_patch.py # PatchMap 注入与原始模板不变性测试
@@ -143,6 +143,15 @@ python -m server.cli list
 ### 4. 运行全量测试套件
 
 ```bash
-.venv/bin/pytest -v
+python -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt pytest pytest-asyncio
+.venv/bin/python -m pytest -q
 ```
-21 项测试全部通过（21 passed）。
+测试数量与结果以实际执行输出为准。测试默认使用仿真 LLM 和测试图视频，不代表真实成片质量。
+
+参赛优化现状与后续验收见 [参赛清单](docs/competition-readiness.md)。
+
+
+## 参赛工程增强
+
+实现情况、恢复流程、素材/声音操作与接口见 [运行手册](docs/competition-runbook.md)；[复现 Notebook](notebooks/reproduce.ipynb) 和 [12 条固定输入](evaluation/cases.json) 可直接运行。图生视频需要先上传并绑定参考图；仿真只证明工程链路。

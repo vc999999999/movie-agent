@@ -182,7 +182,7 @@ class SceneSpec(StrictBaseModel):
 
 # 5.5 ShotSpec
 class ShotSpec(StrictBaseModel):
-    shot_id: str
+    shot_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     scene_id: str
     order: int
     beat_id: Optional[str] = None
@@ -410,6 +410,7 @@ class ScreenplayPackage(StrictBaseModel):
 
 # Workflow Plan
 class WorkflowPlan(StrictBaseModel):
+    template_sha256: Optional[str] = None
     shot_id: str
     workflow_id: Optional[str]
     status: Literal["matched", "unsupported", "precheck_failed"]

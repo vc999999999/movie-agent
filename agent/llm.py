@@ -10,6 +10,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from server.config import settings
+from agent.execution import metrics_context
 from agent.models import (
     AuteurContext,
     BriefExtraction,
@@ -187,6 +188,9 @@ class LLMService:
             "stream": True,
         }
 
+        meter = metrics_context.get()
+        if meter is not None:
+            meter["llm_calls"] += 1
         content_parts: list[str] = []
         async with httpx.AsyncClient(timeout=300.0) as client:
             async with client.stream("POST", f"{self.base_url}/chat/completions", headers=headers, json=payload) as resp:
@@ -201,6 +205,11 @@ class LLMService:
                         chunk = json.loads(data)
                     except json.JSONDecodeError:
                         continue
+                    usage = chunk.get("usage")
+                    if meter is not None and usage:
+                        meter["usage_available"] = True
+                        meter["input_tokens"] += usage.get("prompt_tokens", 0)
+                        meter["output_tokens"] += usage.get("completion_tokens", 0)
                     choices = chunk.get("choices") or []
                     if not choices:
                         continue
@@ -224,9 +233,11 @@ class LLMService:
         Deterministic demo data is available only when explicitly enabled. Production
         requests must fail visibly instead of being replaced by fabricated output.
         """
-        if not self.has_api_key:
-            if settings.llm_mock_mode and fallback_fn:
+        if settings.llm_mock_mode:
+            if fallback_fn:
                 return fallback_fn()
+            raise RuntimeError("仿真模式没有此内容修复样例，请使用测试注入或真实 LLM 验证")
+        if not self.has_api_key:
             raise RuntimeError("OPENAI_API_KEY is not set (set LLM_MOCK_MODE=true only for local demos/tests)")
 
         # First attempt

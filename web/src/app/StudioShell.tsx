@@ -1,3 +1,5 @@
+import { apiJson } from "../api/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { STAGES, type StageId } from "./stages";
@@ -39,6 +41,19 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
   const { inspector, inspectorOpen, setInspectorOpen, dockTasks, clearFinishedDockTasks, aiWait } = useShell();
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [dockOpen, setDockOpen] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [autoError, setAutoError] = useState("");
+  const qc = useQueryClient();
+  async function startAutomatic() {
+    if (!project) return;
+    setAutoBusy(true); setAutoError("");
+    try {
+      await apiJson(`/api/projects/${project.id}/auto_pipeline`, { method: "POST" });
+      await qc.invalidateQueries();
+      onSelectStage("generation");
+    } catch (error) { setAutoError(error instanceof Error ? error.message : String(error)); }
+    finally { setAutoBusy(false); }
+  }
 
   const activeCount = dockTasks.filter((t) => t.status === "submitted" || t.status === "running").length;
   const statusMeta = project ? STATUS_LABEL[project.status] : null;
@@ -88,6 +103,8 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
           <span className="text-tertiary" style={{ fontSize: 13 }}>未打开项目</span>
         )}
         <div style={{ flex: 1 }} />
+        {project && <button type="button" className="tag tag-accent" disabled={autoBusy} onClick={() => void startAutomatic()}>{autoBusy ? "启动中…" : "一句话全自动生成"}</button>}
+        {autoError && <span role="alert">{autoError}</span>}
         {inspector ? (
           <button
             type="button"

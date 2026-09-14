@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from agent.execution import ProjectBusy, NeedsClarification, QualityFailed, SubmissionUncertain
+from pydantic import ValidationError
 from starlette.types import Scope
 
 from server.api import router
@@ -21,6 +23,39 @@ app = FastAPI(
     description="从一句话创意到分镜表与 ComfyUI 工作流参数包的电影 Agent 系统",
     version="0.2.0",
 )
+
+@app.middleware("http")
+async def record_human_actions(request, call_next):
+    response = await call_next(request)
+    import re
+    from server.db import db
+    match = re.fullmatch(r"/api/projects/(prj_[0-9a-f]{8})/(.+)", request.url.path)
+    if match and request.method in ("POST", "PUT", "PATCH") and response.status_code < 300:
+        operation = match[2]
+        if operation in ("constraints", "timeline", "quality/repair") or operation.endswith("/confirm") or request.method == "PATCH":
+            db.save_artifact(match[1], "human_intervention", {"operation": operation, "method": request.method})
+    return response
+
+
+@app.exception_handler(ProjectBusy)
+async def busy_handler(request, exc):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+@app.exception_handler(SubmissionUncertain)
+async def uncertain_handler(request, exc):
+    return JSONResponse(status_code=409, content={"detail": str(exc), "status": "interrupted"})
+
+
+@app.exception_handler(RuntimeError)
+async def runtime_handler(request, exc):
+    return JSONResponse(status_code=502, content={"detail": str(exc)[:2000] or type(exc).__name__})
+
+
+@app.exception_handler(ValueError)
+async def validation_handler(request, exc):
+    return JSONResponse(status_code=422, content={"detail": str(exc)[:3000]})
+
 
 # Include API routes
 app.include_router(router)

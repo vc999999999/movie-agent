@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { ProductionTools } from "../../components/ProductionTools";
+import { useMemo, useState, useEffect } from "react";
 import { encodeSeg, outputUrl } from "../../api/client";
 import { useCreateRoughCut, usePackages, useProject, useShots } from "../../api/queries";
 import { Button } from "../../components/Button";
@@ -81,6 +82,7 @@ export function PreviewStage({ projectId }: { projectId: string }) {
   const packagesQuery = usePackages(projectId, true);
   const createRoughCut = useCreateRoughCut(projectId);
   const [roughCutReady, setRoughCutReady] = useState(status === "completed");
+  useEffect(() => setRoughCutReady(status === "completed"), [status, projectQuery.dataUpdatedAt]);
   const { toast } = useToast();
 
   const shots = shotsQuery.data?.shots ?? [];
@@ -95,7 +97,7 @@ export function PreviewStage({ projectId }: { projectId: string }) {
         <span className="mono">{shotsQuery.data ? shotsQuery.data.total_duration.toFixed(1) : "-"}s</span>
       </p>
       <p className="text-tertiary" style={{ fontSize: 12 }}>
-        第一版粗剪提供播放、镜头清单与下载。时间线编辑将在后端提供 EDL 接口后开放。
+        在作品制作面板编辑声音和字幕，合成后核对实际成片。
       </p>
     </div>,
     [shots.length, shotsQuery.data],
@@ -119,6 +121,7 @@ export function PreviewStage({ projectId }: { projectId: string }) {
           播放合成后的粗剪短片，核对镜头顺序与时长。
         </p>
       </header>
+      <ProductionTools projectId={projectId} />
 
       {failed ? (
         <ErrorNotice

@@ -17,9 +17,13 @@ export interface PipelineStepLog {
 interface PipelineStatusResponse {
   project_id: string;
   project_status: string;
-  pipeline: { steps: PipelineStepLog[]; status: "idle" | "running" | "completed" | "failed"; error: string | null };
+  pipeline: { steps: PipelineStepLog[]; status: "idle" | "running" | "completed" | "failed" | "interrupted" | "needs_clarification" | "quality_failed"; task_id?: string; elapsed_seconds?: number; error: string | null };
   shots: { shot_id: string; status: string; error?: string | null }[];
   artifacts: Record<string, boolean>;
+  handoffs?: { version: number; content: { role: string; task: string; elapsed_seconds: number; status?: string } }[];
+  revisions?: { version: number; content: { role: string; round: number; before: { shots: { shot_id: string; action: string }[] }; after: { shots: { shot_id: string; action: string }[] } } }[];
+  reused?: unknown[];
+  legacy_render_notice?: boolean;
 }
 
 /** 轮询编排状态：pipeline 运行时 2s 一次，否则 10s 低频。 */
@@ -84,7 +88,7 @@ function buildSwarmTree(
 
   // Lead Agent 状态
   const leadStatus: NodeStatus =
-    pstatus === "running" ? "running" : pstatus === "failed" ? "failed" : pstatus === "completed" ? "done" : "pending";
+    pstatus === "running" ? "running" : ["failed", "interrupted", "needs_clarification", "quality_failed"].includes(pstatus) ? "failed" : pstatus === "completed" ? "done" : "pending";
 
   // Wave 1: 创意分析
   const wave1: SwarmNode = {
@@ -133,8 +137,15 @@ function buildSwarmTree(
       targetStage: "storyboard",
     },
     {
+      key: "quality",
+      role: "质检",
+      task: "独立审阅与最多两轮修订",
+      status: nodeStatusOf("quality", steps, artifacts, "quality", pstatus),
+      targetStage: "generation",
+    },
+    {
       key: "packages",
-      role: "提示词工程师",
+      role: "提示词编译器",
       task: "Prompt 包编译与工作流注入",
       status: nodeStatusOf("packages", steps, artifacts, "packages", pstatus),
       targetStage: "generation",
@@ -161,7 +172,7 @@ function buildSwarmTree(
     }
     return {
       key: `render-${shotId}`,
-      role: "镜头渲染师",
+      role: "渲染执行",
       task: `${shotId} · ${shotTitles.get(shotId) ?? "镜头视频生成"}`,
       status,
       error,
@@ -171,7 +182,7 @@ function buildSwarmTree(
   if (wave4.length === 0) {
     wave4.push({
       key: "render-pending",
-      role: "镜头渲染师",
+      role: "渲染执行",
       task: "待分镜生成后执行逐镜头渲染",
       status: renderStep?.status === "running" ? "running" : "pending",
       targetStage: "generation" as StageId,
@@ -181,7 +192,7 @@ function buildSwarmTree(
   // Wave 5: 剪辑
   const wave5: SwarmNode = {
     key: "rough_cut",
-    role: "剪辑师",
+    role: "剪辑执行",
     task: "FFmpeg 粗剪合成成片",
     status: nodeStatusOf("rough_cut", steps, artifacts, "rough_cut", pstatus),
     targetStage: "preview",
@@ -350,13 +361,13 @@ export function PipelineSwarm({
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 600 }}>全片编排</h3>
           <p className="text-tertiary" style={{ fontSize: 12, marginTop: 2 }}>
-            Lead Agent 协调各专家任务，点击卡片可跳到对应阶段查看或调整
+            角色职责概览；实际执行顺序、耗时与反馈见下方运行记录
           </p>
         </div>
         <span style={{ flex: 1 }} />
         {onStart ? (
           <Button variant="primary" size="sm" onClick={onStart} disabled={!canStart || starting}>
-            {status?.pipeline.status === "running" ? "生成中…" : "开始全自动生成"}
+            {status?.pipeline.status === "running" ? "生成中…" : (status?.pipeline.status === "idle" ? "开始全自动生成" : "恢复生成")}
           </Button>
         ) : null}
       </div>
@@ -385,6 +396,12 @@ export function PipelineSwarm({
         ))}
       </div>
 
+      <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+        {status?.pipeline.task_id && <p className="text-secondary">任务 {status.pipeline.task_id.slice(0, 12)} · {status.pipeline.elapsed_seconds ?? "进行中"} 秒 · 复用 {status.reused?.length ?? 0} 次</p>}
+        {status?.legacy_render_notice && <p>旧镜头缺少生成指纹，将重新验证并生成。</p>}
+        {(status?.handoffs ?? []).slice(-12).map(item => <p key={item.version}>{({ producer: "制片规划", writer: "编剧", director: "分镜导演", critic: "质检", executor: "制作执行" } as Record<string, string>)[item.content.role] ?? item.content.role} · {item.content.task} · {item.content.elapsed_seconds}s · {item.content.status ?? "反馈已记录"}</p>)}
+        {(status?.revisions ?? []).map(item => <details key={item.version}><summary>第 {item.content.round} 轮修订 · {item.content.role === "writer" ? "编剧" : "分镜导演"}</summary>{item.content.after.shots.map(shot => <p key={shot.shot_id}>{shot.shot_id}：{item.content.before.shots.find(old => old.shot_id === shot.shot_id)?.action} → {shot.action}</p>)}</details>)}
+      </div>
       {status?.pipeline.error ? (
         <p className="text-danger" style={{ fontSize: 12, marginTop: 10 }} role="alert">
           编排失败：{status.pipeline.error}

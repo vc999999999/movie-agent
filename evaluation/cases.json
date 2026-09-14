@@ -1,0 +1,14 @@
+[
+  {"id":"mystery_vertical","idea":"30秒竖屏悬疑预告片：雨夜侦探发现凶手留下的是自己明天的指纹，无对白。","expected":"completed"},
+  {"id":"chase_horizontal","idea":"30秒横屏动作短片：快递员带着最后一支解药穿过封锁街区，最终选择救追捕他的守卫，无对白。","expected":"completed"},
+  {"id":"emotional","idea":"30秒横屏情感短片：老人每天修理一盏不会亮的灯，孙女发现灯里藏着给她的信，无对白。","expected":"completed"},
+  {"id":"dialogue_two","idea":"30秒横屏，两名角色，有对白：两名宇航员争夺氧气，最后发现其中一个只是录音。","expected":"completed"},
+  {"id":"voiceover","idea":"30秒竖屏，仅旁白：失去记忆的邮差追查寄给自己的最后一封信。","expected":"completed"},
+  {"id":"three_characters","idea":"30秒横屏，三名角色，无对白：三人轮流守护同一颗即将熄灭的星星。","expected":"completed"},
+  {"id":"ten_seconds","idea":"10秒竖屏，无对白：机器人第一次为枯萎的花撑伞，最后花瓣重新张开。","expected":"completed"},
+  {"id":"sixty_seconds","idea":"60秒横屏，无对白：消防员在空城中寻找求救声，最后救出一台播放旧录音的机器。","expected":"completed"},
+  {"id":"style_lock","idea":"30秒竖屏，无对白，始终黑白：穿红外反光外套的守夜人追踪镜子里的陌生人。","expected":"completed"},
+  {"id":"duration_conflict","idea":"做一个30秒又必须60秒的侦探短片。","expected":"needs_clarification"},
+  {"id":"aspect_conflict","idea":"30秒短片，必须横屏同时必须竖屏。","expected":"needs_clarification"},
+  {"id":"unsupported_duration","idea":"120秒横屏无对白的完整公路短片。","expected":"needs_clarification"}
+]

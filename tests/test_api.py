@@ -23,7 +23,7 @@ def test_api_auteur_profiles_list():
     assert profile["default_variant_id"] == "parallel_time_pressure"
     assert len(profile["variants"]) == 4
 
-def test_api_project_lifecycle():
+def test_api_project_lifecycle(reference_bytes):
     # 1. Create project
     create_res = client.post("/api/projects", json={
         "source_text": "做一个45秒赛博朋克雨夜追凶预告片，竖屏，冷色调",
@@ -87,6 +87,13 @@ def test_api_project_lifecycle():
     assert len(pkg_data["prompt_packages"]) >= 3
     assert len(pkg_data["workflow_plans"]) >= 3
 
+    # Explicit reference asset: production no longer accepts a template placeholder.
+    import json
+    asset = client.post(f"/api/projects/{project_id}/assets", params={"metadata": json.dumps({"purpose": "reference", "source": "synthetic test"})}, content=reference_bytes)
+    assert asset.status_code == 200, asset.text
+    sid = pkg_data["prompt_packages"][0]["shot_id"]
+    assert client.patch(f"/api/projects/{project_id}/shots/{sid}", json={"updates": {"reference_asset_ids": [asset.json()["id"]]}}).status_code == 200
+    assert client.post(f"/api/projects/{project_id}/shots/confirm").status_code == 200
     # 9. Test single shot render (mock/real mode)
     first_shot_id = pkg_data["prompt_packages"][0]["shot_id"]
     render_res = client.post(f"/api/shots/{first_shot_id}/render", json={"project_id": project_id})

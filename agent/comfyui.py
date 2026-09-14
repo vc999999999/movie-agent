@@ -70,49 +70,35 @@ class ComfyUIClient:
             logger.info(f"ComfyUI mock mode active: generated prompt_id {mock_prompt_id}")
             return mock_prompt_id, None
 
-        # Real execution with exponential backoff
-        for attempt in range(max_retries + 1):
-            try:
-                async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
-                    resp = await client.post(f"{self.base_url}/prompt", json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        prompt_id = data.get("prompt_id")
-                        if prompt_id:
-                            return prompt_id, None
-                        return None, ErrorDetail(
-                            code="COMFYUI_INVALID_RESPONSE",
-                            message="ComfyUI 响应中缺少 prompt_id",
-                            details={"response": data},
-                            retryable=False,
-                        )
-                    else:
-                        err_text = resp.text[:4000]
-                        if "node_errors" in err_text:
-                            return None, ErrorDetail(
-                                code="COMFYUI_NODE_ERROR",
-                                message="ComfyUI 工作流节点执行参数验证错误",
-                                details={"response": err_text},
-                                retryable=False,
-                                suggested_action="请检查工作流中各节点的模型名称或参数格式",
-                            )
-                        if attempt == max_retries:
-                            return None, ErrorDetail(
-                                code="COMFYUI_HTTP_ERROR",
-                                message=f"ComfyUI HTTP {resp.status_code}: {err_text}",
-                                retryable=False,
-                            )
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
-                if attempt == max_retries:
-                    return None, ErrorDetail(
-                        code="COMFYUI_CONNECTION_ERROR",
-                        message=f"无法连接到 ComfyUI 服务 ({self.base_url}): {e}",
-                        retryable=True,
-                        suggested_action="请检查 ComfyUI 是否已启动，或设置 COMFYUI_MOCK_MODE=true 进行本地仿真测试",
-                    )
-                await asyncio.sleep(1.0 * (2 ** attempt))
+        try:
+            async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
+                resp = await client.post(f"{self.base_url}/prompt", json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data.get("prompt_id"):
+                        return data["prompt_id"], None
+                    return None, ErrorDetail(code="SUBMISSION_UNCERTAIN", message="响应缺少 prompt_id")
+                if resp.status_code == 429:
+                    return None, ErrorDetail(code="RATE_LIMITED", message="ComfyUI 请求限流", retryable=True)
+                return None, ErrorDetail(code="COMFYUI_HTTP_ERROR" if resp.status_code < 500 else "SUBMISSION_UNCERTAIN",
+                                         message=f"ComfyUI HTTP {resp.status_code}: {resp.text[:500]}")
+        except httpx.ConnectError as exc:
+            return None, ErrorDetail(code="COMFYUI_CONNECTION_ERROR", message=str(exc), retryable=True)
+        except (httpx.TimeoutException, ValueError, httpx.ReadError) as exc:
+            return None, ErrorDetail(code="SUBMISSION_UNCERTAIN", message=str(exc))
 
-        return None, ErrorDetail(code="COMFYUI_UNKNOWN_ERROR", message="Unknown error submitting to ComfyUI")
+    async def upload_image(self, path: Path) -> str:
+        if self.mock_mode:
+            return path.name
+        async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
+            with path.open("rb") as image:
+                response = await client.post(f"{self.base_url}/upload/image", files={"image": (path.name, image)}, data={"overwrite": "false"})
+            response.raise_for_status()
+            data = response.json()
+            name = data.get("name")
+            if not name:
+                raise ValueError("ComfyUI 未返回上传素材名")
+            return f"{data['subfolder']}/{name}" if data.get("subfolder") else name
 
     async def wait_for_completion(
         self,

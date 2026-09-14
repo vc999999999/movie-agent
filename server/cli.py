@@ -15,6 +15,7 @@ async def run_cli():
     create_parser = subparsers.add_parser("create", help="Create a new movie project from an idea")
     create_parser.add_argument("--idea", type=str, required=True, help="User idea or script")
     create_parser.add_argument("--title", type=str, default=None, help="Project title")
+    create_parser.add_argument("--reference", type=str, help="Existing PNG/JPEG to use as the project default first frame")
     create_parser.add_argument("--auto", action="store_true", help="Automatically confirm defaults and generate end-to-end")
 
     # Command: list
@@ -45,11 +46,20 @@ async def run_cli():
         pid = project["id"]
         print(f"✅ 项目已创建! ID: {pid}")
 
-        # Step 1: Initial analysis
+        if args.reference:
+            from pathlib import Path
+            from agent.media import AssetMetadata
+            await project_service.register_asset(pid, Path(args.reference).read_bytes(), AssetMetadata(
+                purpose="reference", project_default=True, source="CLI user supplied reference", rights="pending"))
+        if args.auto:
+            print("⚡ 自动执行导演方案、分镜、渲染与成片...")
+            await project_service.run_auto_pipeline(pid)
+            artifact = project_service.db.get_latest_artifact(pid, "rough_cut")
+            print(f"✅ 成片已生成: {artifact['content']['file_path']}")
+            return
         print("🔍 正在分析创意并提炼创作要素...")
         q_resp = await project_service.analyze_input(pid)
-
-        if args.auto or q_resp.status == "brief_review":
+        if q_resp.status == "brief_review":
             print("⚡ 自动模式：确认创作简报...")
             await project_service.confirm_brief(pid)
             print("✅ 剧本与分镜镜头表已生成!")
@@ -62,7 +72,7 @@ async def run_cli():
             print("\n" + "="*50)
             print(packages["production_report"])
             print("="*50)
-            print(f"\n🎉 项目 {pid} 准备就绪！可运行 `python -m app.cli render --id {pid}` 执行生成。")
+            print(f"\n🎉 项目 {pid} 准备就绪！可运行 `python -m server.cli render --id {pid}` 执行生成。")
         else:
             print(f"\n❓ 当前需要澄清的问题 (轮次 {q_resp.round}/3):")
             for q in q_resp.questions:
