@@ -1,5 +1,8 @@
+import { apiJson, encodeSeg } from "../../api/client";
+import { navigateStage } from "../../app/stages";
 import { useMemo, useState } from "react";
 import {
+  useAuteurContext,
   useConfirmTreatment,
   useGenerateTreatments,
   useProject,
@@ -28,12 +31,14 @@ function TreatmentCard({
   diffOnly,
   onConfirm,
   confirming,
+  techniqueNames,
 }: {
   option: TreatmentOption;
   recommended: boolean;
   diffOnly: boolean;
   onConfirm: (option: TreatmentOption) => void;
   confirming: boolean;
+  techniqueNames: Map<string, string>;
 }) {
   const risk = RISK_LABEL[option.production_risk];
   const row = (label: string, value: React.ReactNode) => (
@@ -69,10 +74,10 @@ function TreatmentCard({
       {!diffOnly ? row("视觉策略", option.visual_strategy) : null}
       {option.technique_plan.length > 0
         ? row(
-            "名导技法计划",
+            "导演技法计划",
             <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {option.technique_plan.map((t) => (
-                <span key={t} className="tag" style={{ fontSize: 11 }}>{t}</span>
+                <span key={t} className="tag" style={{ fontSize: 11 }}>{techniqueNames.get(t) ?? t}</span>
               ))}
             </span>,
           )
@@ -89,6 +94,8 @@ function TreatmentCard({
 
 export function TreatmentsStage({ projectId }: { projectId: string }) {
   const projectQuery = useProject(projectId);
+  const auteur = useAuteurContext(projectId, true);
+  const techniqueNames = new Map(auteur.data?.profile.variants.flatMap(v => v.techniques.map(t => [t.technique_id, t.name] as const)) ?? []);
   const status = projectQuery.data?.project.status;
   const treatmentsQuery = useTreatments(projectId, true);
   const generateTreatments = useGenerateTreatments(projectId);
@@ -101,7 +108,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
 
   const pkg = treatmentsQuery.data ?? null;
   const hasTreatments = pkg !== null && pkg.options.length > 0;
-  const alreadyConfirmed = status !== "treatment_review" && status !== undefined;
+  const alreadyConfirmed = !!status && ["screenplay_ready", "shots_review", "package_ready", "rendering", "completed", "failed"].includes(status);
 
   const recommended = useMemo(
     () => pkg?.options.find((o) => o.treatment_id === pkg.recommendation) ?? null,
@@ -138,19 +145,22 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
     if (!pendingOption || confirmTreatment.isPending) return;
     withWait(
       {
-        step: "确认方案并生成剧本",
-        detail: "AI 正在按选定方案生成剧本、场景与分镜",
+        step: "保存导演方案",
+        detail: "保存后将在后台生成剧本、分镜、提示词和工作流",
         expect: "通常需要 30~90 秒",
       },
-      () =>
-        confirmTreatment.mutateAsync({
+      async () => {
+        await confirmTreatment.mutateAsync({
           treatment_id: pendingOption.treatment_id,
           production_pack_id: pendingOption.production_pack_id,
-        }),
+        });
+        await apiJson(`/api/projects/${encodeSeg(projectId)}/auto_pipeline`, { method: "POST" });
+      },
     )
       .then(() => {
         setPendingOption(null);
-        toast("导演方案已确认，剧本与分镜已生成", "success");
+        toast("方案已确认，制作流程正在生成", "success");
+        navigateStage("storyboard");
       })
       .catch((err) => toast("确认失败：" + (err?.message ?? "未知错误"), "error"));
   };
@@ -213,7 +223,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
           style={{
             display: "grid",
             gap: 14,
-            gridTemplateColumns: `repeat(${Math.min(pkg.options.length, 3)}, minmax(0, 1fr))`,
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
           }}
           className="treatments-grid"
         >
@@ -225,6 +235,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
               diffOnly={diffOnly}
               onConfirm={setPendingOption}
               confirming={confirmTreatment.isPending}
+              techniqueNames={techniqueNames}
             />
           ))}
         </div>
@@ -250,7 +261,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
       <StageFooter
         done={alreadyConfirmed}
         hasNext
-        nextLabel="剧本圣经"
+        nextLabel="制作流程"
         onNext={onNextStage}
       />
 
@@ -266,7 +277,7 @@ export function TreatmentsStage({ projectId }: { projectId: string }) {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <Button variant="ghost" onClick={() => setPendingOption(null)}>再想想</Button>
               <Button variant="primary" onClick={doConfirm} disabled={confirmTreatment.isPending}>
-                {confirmTreatment.isPending ? "正在生成剧本与分镜…" : "确认采用"}
+                {confirmTreatment.isPending ? "正在启动…" : "采用方案，生成制作流程"}
               </Button>
             </div>
           </div>

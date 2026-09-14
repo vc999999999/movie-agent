@@ -50,32 +50,28 @@ export function BibleStage({ projectId }: { projectId: string }) {
 
   useInspector(
     <div style={{ display: "grid", gap: 12 }}>
-      <h3 style={{ fontSize: 14 }}>圣经锁定说明</h3>
-      <div style={{ display: "grid", gap: 8, fontSize: 12 }} className="text-secondary">
-        <p><LockIcon tone="user" reason="" /> 金色：用户明确锁定，Agent 不可更改。</p>
-        <p><LockIcon tone="agent" reason="" /> 灰色：Agent 默认值，后续版本开放修改。</p>
-        <p><LockIcon tone="blocked" reason="" /> 红色：当前工作流暂不支持改动。</p>
-      </div>
+      <h3 style={{ fontSize: 14 }}>角色与场景一致性</h3>
+      <p className="text-secondary">这些设定会写入每个镜头的提示词。请核对人物外观、服装和场景是否符合剧情。</p>
       {bible ? (
         <p className="text-tertiary" style={{ fontSize: 12 }}>
           {bible.characters.length} 个角色 · {bible.locations.length} 个场景 · 目标时长 {bible.target_duration}s
         </p>
       ) : null}
       <p className="text-tertiary" style={{ fontSize: 12 }}>
-        第一版圣经为只读。字段级修改与影响分析将在后端提供精确更新接口后开放。
+        角色与场景在此审阅；需要改变故事设定时，返回剧情拆解修改，再生成制作流程。
       </p>
     </div>,
     [bible],
   );
 
   if (screenplayQuery.isLoading) {
-    return <p className="text-tertiary" aria-live="polite">正在载入剧本圣经…</p>;
+    return <p className="text-tertiary" aria-live="polite">正在载入剧本设定…</p>;
   }
 
   if (screenplayQuery.isError || !bible || !pkg || !locks) {
     return (
       <ErrorNotice
-        title="尚未生成剧本圣经"
+        title="尚未生成剧本设定"
         impact="请先确认导演方案，Agent 会在此之后生成角色与场景设定。"
         error={screenplayQuery.error}
       />
@@ -107,13 +103,13 @@ export function BibleStage({ projectId }: { projectId: string }) {
                   <span className="tag" style={{ fontSize: 11 }}>{c.narrative_role}</span>
                   {c.age_range ? <span className="tag" style={{ fontSize: 11 }}>{c.age_range}</span> : null}
                 </div>
-                <LockedField label="固定外观" value={c.fixed_appearance} tone="agent" reason="Agent 默认，可修改" />
-                <LockedField label="固定服装" value={c.fixed_costume} tone="agent" reason="Agent 默认，可修改" />
+                <LockedField label="固定外观" value={c.fixed_appearance} tone="agent" reason="当前制作设定" />
+                <LockedField label="固定服装" value={c.fixed_costume} tone="agent" reason="当前制作设定" />
                 {c.personality.length > 0 ? (
-                  <LockedField label="性格" value={c.personality.join("、")} tone="agent" reason="Agent 默认，可修改" />
+                  <LockedField label="性格" value={c.personality.join("、")} tone="agent" reason="当前制作设定" />
                 ) : null}
                 {c.forbidden_changes.map((f) => (
-                  <LockedField key={f} label="不可更改" value={f} tone="blocked" reason="工作流暂不支持" />
+                  <LockedField key={f} label="一致性约束" value={f} tone="agent" reason="保持镜头间一致性" />
                 ))}
               </div>
             ))}
@@ -128,10 +124,10 @@ export function BibleStage({ projectId }: { projectId: string }) {
                   <span className="tag" style={{ fontSize: 11 }}>{l.time_of_day}</span>
                   {l.weather ? <span className="tag" style={{ fontSize: 11 }}>{l.weather}</span> : null}
                 </div>
-                <LockedField label="固定视觉描述" value={l.fixed_visual_description} tone="agent" reason="Agent 默认，可修改" />
-                <LockedField label="光线基准" value={l.lighting_baseline} tone="agent" reason="Agent 默认，可修改" />
+                <LockedField label="固定视觉描述" value={l.fixed_visual_description} tone="agent" reason="当前制作设定" />
+                <LockedField label="光线基准" value={l.lighting_baseline} tone="agent" reason="当前制作设定" />
                 {l.forbidden_changes.map((f) => (
-                  <LockedField key={f} label="不可更改" value={f} tone="blocked" reason="工作流暂不支持" />
+                  <LockedField key={f} label="一致性约束" value={f} tone="agent" reason="保持镜头间一致性" />
                 ))}
               </div>
             ))}
@@ -150,18 +146,18 @@ export function BibleStage({ projectId }: { projectId: string }) {
                   </span>
                 }
                 tone="agent"
-                reason="Agent 默认，可修改"
+                reason="当前制作设定"
               />
             ) : null}
             {bible.soundtrack_style ? (
-              <LockedField label="配乐风格" value={bible.soundtrack_style} tone="agent" reason="Agent 默认，可修改" />
+              <LockedField label="配乐风格" value={bible.soundtrack_style} tone="agent" reason="当前制作设定" />
             ) : null}
             {bible.global_negative_prompt ? (
               <LockedField
                 label="全局负向约束"
                 value={<span className="mono" style={{ fontSize: 12 }}>{bible.global_negative_prompt}</span>}
                 tone="agent"
-                reason="Agent 默认，可修改"
+                reason="当前制作设定"
               />
             ) : null}
           </section>
@@ -179,6 +175,8 @@ export function BibleStage({ projectId }: { projectId: string }) {
               </div>
               <p className="text-secondary" style={{ fontSize: 12 }}>{s.setup}</p>
               <p className="text-tertiary" style={{ fontSize: 12 }}>{s.purpose}</p>
+              <ol style={{paddingLeft: 18, fontSize: 12, lineHeight: 1.8}}>{s.action_beats.map((beat, i) => <li key={i}>{beat}</li>)}</ol>
+              {s.dialogue.map((line, i) => <p key={i} style={{fontSize: 12}}><strong>{line.character_id}</strong>：{line.text}</p>)}
             </div>
           ))}
         </aside>

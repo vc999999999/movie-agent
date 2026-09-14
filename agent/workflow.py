@@ -81,6 +81,7 @@ class WorkflowRegistry:
         aspect_ratio: str,
         comfyui_installed_nodes: Optional[set[str]] = None,
         preferred_workflow_id: Optional[str] = None,
+        check_environment: bool = True,
     ) -> WorkflowPlan:
         available_vram_gb = settings.comfyui_vram_gb
         candidates: list[WorkflowProfile] = []
@@ -160,7 +161,7 @@ class WorkflowRegistry:
             )
 
         # 4. Check VRAM
-        vram_filtered = [p for p in frame_filtered if p.min_vram_gb <= available_vram_gb]
+        vram_filtered = [p for p in frame_filtered if not check_environment or p.min_vram_gb <= available_vram_gb]
         if not vram_filtered:
             return WorkflowPlan(
                 shot_id=shot.shot_id,
@@ -231,6 +232,7 @@ class WorkflowRegistry:
             "height": prompt_pkg.height,
             "frame_count": prompt_pkg.frame_count,
             "fps": prompt_pkg.fps,
+            "preview_fps": prompt_pkg.fps,
             "first_frame": first_frame_asset_path,
             "last_frame": last_frame_asset_path,
         }

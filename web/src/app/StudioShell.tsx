@@ -1,3 +1,4 @@
+import { DemoNotice } from "../components/DemoNotice";
 import { apiJson } from "../api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
@@ -12,10 +13,11 @@ import "./shell.css";
 const STATUS_LABEL: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" | "info" }> = {
   collecting: { label: "理解创意中", tone: "info" },
   brief_review: { label: "待确认 Brief", tone: "accent" },
+  director_review: { label: "待选择导演模板", tone: "accent" },
   treatment_review: { label: "待选择方案", tone: "accent" },
-  screenplay_ready: { label: "剧本就绪", tone: "info" },
+  screenplay_ready: { label: "待生成制作流程", tone: "info" },
   shots_review: { label: "待确认分镜", tone: "accent" },
-  package_ready: { label: "生成包就绪", tone: "info" },
+  package_ready: { label: "制作包已生成", tone: "info" },
   rendering: { label: "渲染中", tone: "warning" },
   completed: { label: "已完成", tone: "success" },
   failed: { label: "失败", tone: "danger" },
@@ -48,9 +50,9 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
     if (!project) return;
     setAutoBusy(true); setAutoError("");
     try {
-      await apiJson(`/api/projects/${project.id}/auto_pipeline`, { method: "POST" });
+      await apiJson(`/api/projects/${project.id}/auto_pipeline?render=true`, { method: "POST" });
       await qc.invalidateQueries();
-      onSelectStage("generation");
+      onSelectStage("render");
     } catch (error) { setAutoError(error instanceof Error ? error.message : String(error)); }
     finally { setAutoBusy(false); }
   }
@@ -69,7 +71,7 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
       {STAGES.map((s) => {
         const reachable = s.index <= maxStageIndex;
         const isActive = s.id === stage;
-        const isDone = s.index < maxStageIndex;
+        const isDone = s.index < maxStageIndex && !(project?.status === "director_review" && s.index > 0);
         return (
           <button
             key={s.id}
@@ -92,12 +94,12 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
   return (
     <div className={shellClass}>
       <header className="shell-topbar glass-strong">
-        <strong className="display" style={{ fontSize: 16 }}>电影 Agent</strong>
+        <strong className="display" style={{ fontSize: 16 }}>幕间</strong><DemoNotice />
         {project ? (
           <>
-            <span className="mono text-tertiary" style={{ fontSize: 12 }}>{project.id}</span>
-            <span style={{ fontSize: 13 }}>{project.title || "未命名项目"}</span>
-            {statusMeta ? <StatusBadge tone={statusMeta.tone} label={statusMeta.label} /> : null}
+            <span className="mono text-tertiary project-id" style={{ fontSize: 12 }}>{project.id}</span>
+            <span className="project-title" style={{ fontSize: 13 }}>{project.title || "未命名项目"}</span>
+            {statusMeta ? <span className="project-state"><StatusBadge tone={statusMeta.tone} label={statusMeta.label} /></span> : null}
           </>
         ) : (
           <span className="text-tertiary" style={{ fontSize: 13 }}>未打开项目</span>
@@ -115,7 +117,7 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
             检查器
           </button>
         ) : null}
-        <button type="button" className="tag hover-lift" onClick={() => setRailCollapsed((v) => !v)}>
+        <button type="button" className="tag hover-lift rail-toggle" onClick={() => setRailCollapsed((v) => !v)}>
           {railCollapsed ? "展开阶段栏" : "收起阶段栏"}
         </button>
         <button type="button" className="tag tag-accent hover-lift" onClick={onNewProject}>
@@ -125,6 +127,7 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
 
       <nav className="shell-rail glass" aria-label="制作阶段">
         {rail}
+        {maxStageIndex >= 4 ? <button type="button" className="rail-item optional-navigation" onClick={() => onSelectStage("render")}>可选 · 在线渲染</button> : null}
       </nav>
 
       <main className="shell-canvas scrollable">
@@ -133,12 +136,14 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
 
       {inspector ? (
         <aside className={`shell-inspector glass ${inspectorOpen ? "open" : ""}`} aria-label="上下文检查器">
+          <button className="tag inspector-close" type="button" onClick={() => setInspectorOpen(false)}>关闭说明</button>
           {inspector}
         </aside>
       ) : null}
 
       <nav className="mobile-stage-nav glass-strong" aria-label="制作阶段">
         {rail}
+        {maxStageIndex >= 4 ? <button type="button" className="rail-item optional-navigation" onClick={() => onSelectStage("render")}>可选 · 在线渲染</button> : null}
       </nav>
 
       <motion.div
@@ -160,7 +165,7 @@ export function StudioShell({ project, stage, maxStageIndex, onSelectStage, onNe
             padding: "0 20px",
           }}
         >
-          <strong style={{ fontSize: 13 }}>渲染任务坞</strong>
+          <strong style={{ fontSize: 13 }}>可选渲染任务</strong>
           {activeCount > 0 ? <StatusBadge tone="warning" label={`${activeCount} 个进行中`} /> : null}
           <span className="text-tertiary" style={{ fontSize: 12 }}>
             {dockTasks.length === 0 ? "暂无任务" : `共 ${dockTasks.length} 个任务`}

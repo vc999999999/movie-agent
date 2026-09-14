@@ -215,9 +215,9 @@ class ComfyUIClient:
     def first_video_output(history: dict[str, Any]) -> Optional[dict[str, str]]:
         """Return the first real video emitted by a ComfyUI output node."""
         for node_output in history.get("outputs", {}).values():
-            for key in ("videos", "gifs"):
+            for key in ("videos", "gifs", "images"):
                 for asset in node_output.get(key, []):
-                    if asset.get("filename"):
+                    if Path(str(asset.get("filename", ""))).suffix.lower() in {".mp4", ".webm", ".mov", ".mkv"}:
                         return {
                             "filename": str(asset["filename"]),
                             "subfolder": str(asset.get("subfolder", "")),

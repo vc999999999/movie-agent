@@ -1,0 +1,60 @@
+profile_id: symmetric_stage
+version: 1.0.0
+director_name: 对称舞台构图
+label: 秩序、平面调度与视觉反差
+description: 用轴线、横向调度和色彩秩序组织画面，适合风格化喜剧与展示短片。
+disclaimer: 幕间原创技法模板；以可执行的叙事、镜头与剪辑规则组织场景。
+default_variant_id: ordered_tableau
+variants:
+- variant_id: ordered_tableau
+  name: 秩序中的偏差
+  reference_works: []
+  best_for:
+  - 喜剧
+  - 人物介绍
+  - 风格短片
+  techniques:
+  - technique_id: center_axis
+    name: 中心轴构图
+    domain: camera
+    instruction: 以门、桌面等建立稳定中心轴，人物在轴线上完成单一动作。
+    viewer_effect: 建立清晰的视觉秩序。
+    generation_note: 固定机位，避免复杂透视旋转与多人同步动作。 视频镜头不超过所选模板上限。
+  - technique_id: one_disruption
+    name: 一个秩序破口
+    domain: narrative
+    instruction: 先重复已建立的秩序，再让一个物件位置或人物动作打破它。
+    viewer_effect: 用对比形成可读的幽默。
+    generation_note: 只改变一个元素，保留道具与服装参考。 视频镜头不超过所选模板上限。
+  - technique_id: flat_reaction
+    name: 正面反应切换
+    domain: editing
+    instruction: 从全景切到同轴人物反应，再回全景展示后果。
+    viewer_effect: 保持舞台空间关系。
+    generation_note: 景别分开生成，不使用连续快速变焦。 视频镜头不超过所选模板上限。
+- variant_id: lateral_chapters
+  name: 横向小章节
+  reference_works: []
+  best_for:
+  - 产品展示
+  - 轻喜剧
+  - 空间探索
+  techniques:
+  - technique_id: lateral_blocks
+    name: 横向空间分区
+    domain: camera
+    instruction: 将行动划分为相邻的明确区域，以水平运动逐一展示。
+    viewer_effect: 让画面像章节展开。
+    generation_note: 优先静态分区镜头接剪，每镜仅一次水平移动。 视频镜头不超过所选模板上限。
+  - technique_id: palette_anchor
+    name: 色彩锚点
+    domain: narrative
+    instruction: 让同一色彩的道具在章节间出现，承担追踪目标而非装饰。
+    viewer_effect: 建立统一的视觉线索。
+    generation_note: 固定主色和物件材质，色彩一致性由参考图辅助。 视频镜头不超过所选模板上限。
+  - technique_id: graphic_match
+    name: 几何匹配剪辑
+    domain: editing
+    instruction: 以圆形、矩形等明确轮廓连接下一章节的物件。
+    viewer_effect: 让段落转换简洁有节奏。
+    generation_note: 两个固定构图接剪，避免模型进行形状变换。 视频镜头不超过所选模板上限。

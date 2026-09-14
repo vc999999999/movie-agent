@@ -206,7 +206,7 @@ async def test_missing_reference_and_real_workflow_binding(reference_bytes, monk
     monkeypatch.setattr(service.comfyui, "upload_image", upload)
     monkeypatch.setattr(service.comfyui, "submit_prompt", submit)
     assert (await service.render_shot(pid, sid)).status == "success"
-    assert submitted[0]["20"]["inputs"]["image"] == "uploaded/real.png"
+    assert submitted[0]["52"]["inputs"]["image"] == "uploaded/real.png"
     service.update_shot(pid, sid, {"reference_asset_ids": []})
     await service.compile_packages(pid)
     with pytest.raises(ValueError, match="首帧"):

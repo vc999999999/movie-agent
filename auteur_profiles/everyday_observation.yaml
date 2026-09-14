@@ -1,0 +1,60 @@
+profile_id: everyday_observation
+version: 1.0.0
+director_name: 日常生活观察
+label: 生活动作、关系距离与留白
+description: 从普通动作和空间变化发现情感，适合家庭、社区和温情故事。
+disclaimer: 幕间原创技法模板；以可执行的叙事、镜头与剪辑规则组织场景。
+default_variant_id: domestic_gesture
+variants:
+- variant_id: domestic_gesture
+  name: 生活动作里的关系
+  reference_works: []
+  best_for:
+  - 家庭
+  - 亲情
+  - 温情
+  techniques:
+  - technique_id: shared_routine
+    name: 共同日常
+    domain: narrative
+    instruction: 先建立递杯、等候或摆椅等普通动作，再用一次变化表现关系转折。
+    viewer_effect: 让情感来自具体行为。
+    generation_note: 每镜一个大动作，复杂手部接触拆成前后状态。 视频镜头不超过所选模板上限。
+  - technique_id: patient_distance
+    name: 克制观察距离
+    domain: camera
+    instruction: 以固定中景或全景让人物完成动作，关键转折才切近景。
+    viewer_effect: 保留人物与生活空间的关系。
+    generation_note: 观察感由多个短镜头承接，每镜遵守工作流时长上限。 视频镜头不超过所选模板上限。
+  - technique_id: offscreen_presence
+    name: 画外存在
+    domain: sound
+    instruction: 用门外脚步或邻室声提示画外人物，画面保留在当前角色。
+    viewer_effect: 让空间有生活延续感。
+    generation_note: 声音后期添加，不新增未设定角色或要求口型同步。 视频镜头不超过所选模板上限。
+- variant_id: place_after_people
+  name: 人离开后的地方
+  reference_works: []
+  best_for:
+  - 告别
+  - 社区
+  - 生活片段
+  techniques:
+  - technique_id: space_before_action
+    name: 先建立地方
+    domain: camera
+    instruction: 先展示能辨认的空间，再让人物进入完成一个日常目标。
+    viewer_effect: 让观众理解人物所在的生活环境。
+    generation_note: 固定地理关系，人物进出方向一致。 视频镜头不超过所选模板上限。
+  - technique_id: material_trace
+    name: 动作留下痕迹
+    domain: narrative
+    instruction: 在行动结束后展示已建立物件的状态变化，例如椅子空下或灯被关闭。
+    viewer_effect: 以物件变化承载离别。
+    generation_note: 只改变一个可控状态，不依赖微小液体或复杂粒子效果。 视频镜头不超过所选模板上限。
+  - technique_id: quiet_hold
+    name: 短暂空镜留白
+    domain: editing
+    instruction: 在人物离开后保留一个有因果联系的空镜，再结束段落。
+    viewer_effect: 给观众理解情绪的时间。
+    generation_note: 空镜纳入总时长预算，不在成片末尾额外叠加时长。 视频镜头不超过所选模板上限。

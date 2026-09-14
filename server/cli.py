@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from pathlib import Path
+from agent.delivery import build_archive
+from server.config import settings
 
 from server.db import init_db
 from agent.service import project_service
 from agent.workflow import workflow_registry
 
 async def run_cli():
-    parser = argparse.ArgumentParser(description="Movie Agent CLI - AI Film Production Agent")
+    parser = argparse.ArgumentParser(description="幕间 CLI - AI Film Production Agent")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Command: create
@@ -33,6 +36,10 @@ async def run_cli():
     cut_parser = subparsers.add_parser("rough-cut", help="Stitch shots into unified MP4 video with FFmpeg")
     cut_parser.add_argument("--id", type=str, required=True, help="Project ID")
 
+    export_parser = subparsers.add_parser("export", help="Export portable ComfyUI production ZIP")
+    export_parser.add_argument("--id", required=True)
+    export_parser.add_argument("--output", type=Path)
+
     # Command: workflows
     subparsers.add_parser("workflows", help="List available ComfyUI workflow templates")
 
@@ -41,13 +48,12 @@ async def run_cli():
     workflow_registry.load_all()
 
     if args.command == "create":
-        print(f"\n🎬 正在创建电影 Agent 项目...")
+        print(f"\n🎬 正在创建幕间 项目...")
         project = project_service.create_project(args.idea, args.title)
         pid = project["id"]
         print(f"✅ 项目已创建! ID: {pid}")
 
         if args.reference:
-            from pathlib import Path
             from agent.media import AssetMetadata
             await project_service.register_asset(pid, Path(args.reference).read_bytes(), AssetMetadata(
                 purpose="reference", project_default=True, source="CLI user supplied reference", rights="pending"))
@@ -59,26 +65,9 @@ async def run_cli():
             return
         print("🔍 正在分析创意并提炼创作要素...")
         q_resp = await project_service.analyze_input(pid)
-        if q_resp.status == "brief_review":
-            print("⚡ 自动模式：确认创作简报...")
-            await project_service.confirm_brief(pid)
-            print("✅ 剧本与分镜镜头表已生成!")
-
-            print("📦 正在确认镜头并编译 Prompt 包及注入 ComfyUI 工作流...")
-            await project_service.confirm_shots(pid)
-            print("✅ 提示词包与工作流生成完毕!")
-
-            packages = project_service.get_packages(pid)
-            print("\n" + "="*50)
-            print(packages["production_report"])
-            print("="*50)
-            print(f"\n🎉 项目 {pid} 准备就绪！可运行 `python -m server.cli render --id {pid}` 执行生成。")
-        else:
-            print(f"\n❓ 当前需要澄清的问题 (轮次 {q_resp.round}/3):")
-            for q in q_resp.questions:
-                print(f"  • [{q.field}] {q.text}")
-                print(f"    可选选项: {', '.join(q.choices)}")
-            print(f"\n提示：可在 Web 端查看并交互，或使用 `--auto` 参数自动采用最佳设定。")
+        print(f"当前状态: {q_resp.status}；请在 Web 端确认简报与导演方案。")
+        for q in q_resp.questions:
+            print(f"  • [{q.field}] {q.text}")
 
     elif args.command == "list":
         projects = project_service.list_projects()
@@ -109,6 +98,13 @@ async def run_cli():
         print(f"\n🎞️ 正在调用 FFmpeg 合成项目 {args.id} 的粗剪短片...")
         cut_path = await project_service.create_rough_cut(args.id)
         print(f"✅ 粗剪视频合成成功: {cut_path}")
+
+    elif args.command == "export":
+        path = args.output or settings.data_dir / args.id / f"{args.id}_comfyui.zip"
+        data = build_archive(project_service, args.id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        print(f"制作包已导出: {path.resolve()}")
 
     elif args.command == "workflows":
         print(f"\n🛠️ 已登记的 ComfyUI 工作流模板:")

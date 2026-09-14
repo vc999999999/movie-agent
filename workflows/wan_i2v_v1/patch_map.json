@@ -1,12 +1,57 @@
 {
-  "positive_prompt": {"node": "40", "input": "text", "required": true},
-  "negative_prompt": {"node": "41", "input": "text", "required": false},
-  "seed": {"node": "30", "input": "seed", "required": true},
-  "steps": {"node": "30", "input": "steps", "required": false},
-  "cfg": {"node": "30", "input": "cfg", "required": false},
-  "frame_count": {"node": "30", "input": "length", "required": true},
-  "width": {"node": "30", "input": "width", "required": true},
-  "height": {"node": "30", "input": "height", "required": true},
-  "fps": {"node": "30", "input": "fps", "required": false},
-  "first_frame": {"node": "20", "input": "image", "required": false}
+  "positive_prompt": {
+    "node": "6",
+    "input": "text",
+    "required": true
+  },
+  "negative_prompt": {
+    "node": "7",
+    "input": "text",
+    "required": false
+  },
+  "seed": {
+    "node": "3",
+    "input": "seed",
+    "required": true
+  },
+  "steps": {
+    "node": "3",
+    "input": "steps",
+    "required": true
+  },
+  "cfg": {
+    "node": "3",
+    "input": "cfg",
+    "required": true
+  },
+  "width": {
+    "node": "50",
+    "input": "width",
+    "required": true
+  },
+  "height": {
+    "node": "50",
+    "input": "height",
+    "required": true
+  },
+  "frame_count": {
+    "node": "50",
+    "input": "length",
+    "required": true
+  },
+  "fps": {
+    "node": "47",
+    "input": "fps",
+    "required": true
+  },
+  "first_frame": {
+    "node": "52",
+    "input": "image",
+    "required": false
+  },
+  "preview_fps": {
+    "node": "28",
+    "input": "fps",
+    "required": true
+  }
 }

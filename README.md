@@ -1,5 +1,5 @@
 ---
-title: Movie Agent - AI 电影制作智能体
+title: 幕间 - 剧情到 ComfyUI 工作流
 emoji: 🎬
 colorFrom: blue
 colorTo: indigo
@@ -8,150 +8,111 @@ app_port: 7860
 pinned: false
 ---
 
-# 🎬 Movie Agent - AI 电影制作智能体
+# 幕间
 
-> 基于《电影Agent详细实现方案.md》的短片制作 Agent。
-> 采用三层结构：
-> - **Agent 核心引擎 (`agent/`)**：纯净无框架依赖的 Headless Agent SDK，可作为通用 Python 包独立使用；
-> - **服务与存储层 (`server/`)**：负责 RESTful 路由、SQLite 审计持久化与 ModelScope/Docker 运行环境；
-> - **独立前端界面 (`web/`)**：现代化暗黑电影质感 UI，前后端独立演进。
+输入剧情或场景 Prompt，确认拆解结果，选择导演模板和方案，生成完整制作资料并导出 ComfyUI 工作流包。在线视频渲染和粗剪是可选功能。
 
----
+## 主流程
 
-## 🌟 核心特性与架构
+1. **剧情拆解**：输入场景／大纲／剧本，补充问题或采用默认设定，编辑并确认简报。
+2. **导演模板**：选择原创模式，或名导技法模式、强度和必须保留的内容。内置都市情绪、悬疑信息控制、对称舞台构图、日常生活观察四套原创模板（各 2 种模式），以及诺兰技法档案的 4 种模式，共 5 套模板、12 种模式。
+3. **导演方案**：比较生成的候选方案，由用户明确选择。系统不会替用户选择推荐方案。
+4. **制作流程**：后台生成角色、场景、剧本、分镜、提示词及工作流。可查看进度、审阅分镜并编辑；错误后重试已有流程的未完成步骤。
+5. **导出工作流**：下载 ZIP；按说明准备素材，在接收者自己的 ComfyUI 上运行。
 
-```text
-用户输入（创意/大纲/剧本）
-        ↓
-【反问引擎】固定问题库 + 优先级公式 (Impact × Uncertainty × Blocking) + 最多 3 轮终止
-        ↓
-【创作简报】CreativeBrief（用户可直接核对、编辑与确认）
-        ↓
-【剧本拆解】ProjectBible（锁定角色外貌 fixed_appearance 与场景固定描述）+ SceneSpec
-        ↓
-【镜头拆解】ShotSpec（时长严格守恒在 5% 误差内、起幅/动作/落幅可观察、连续性校验）
-        ↓
-【Prompt 编译器】8 层确定性拼装（风格锁、角色锁、场景锁、起幅、动作、运镜、灯光、质感）+ 负向提示词去重
-        ↓
-【工作流引擎】PatchMap 确定性打补丁（不改动原始模板，校验节点/输入存在）
-        ↓
-【ComfyUI 客户端】HTTP POST /prompt + /history 输出追踪 + 失败重试；本地仿真须显式开启
-        ↓
-【粗剪成片】FFmpeg 自动拼接所有镜头视频、混音、生成完整短片 MP4
-```
+确认简报只保存设定；确认导演方案只保存选择；Web 默认 `auto_pipeline` 只生成制作资料，到 `package_ready` 结束。它不会渲染视频，也不会生成粗剪。`completed` 保留为可选粗剪的旧状态，现有项目无需迁移数据库。
 
----
+## 导出包
 
-## 📁 解耦后的清晰项目结构
+- `README.md`：使用顺序及未完成项。
+- `manifest.json`：完整性、各镜头文件、素材与依赖。
+- `brief.json`、`screenplay.json`、`shots.json`：剧情、人物场景、剧本和分镜。
+- `prompts.json`、`production_report.md`：正负提示词、参数和制作报告。
+- `auteur_profile.json`、`selected_treatment.json`、`production_pack.json`：已选择的模板／方案（存在时导出）。
+- `workflows/ui/*.json`：可拖入 ComfyUI 的可视化工作流，当前由官方 Wan 原生图生视频模板提供。
+- `workflows/api/*.json`：已注入镜头参数的 API 工作流，供 `/prompt` 使用。
+- `assets/requirements.json`：逐镜头首帧提示词、文件名和尺寸；实际图片需用户准备。
+- `dependencies/models_and_nodes.json`：所需模型及节点；不包含模型权重。
 
-```text
-dy/
-├── agent/                    # 🧠 纯粹的 Agent 核心引擎 (Headless Agent SDK)
-│   ├── __init__.py           # 导出 MovieAgent, ProjectService, Data Models
-│   ├── models.py             # 核心领域数据模型 (Pydantic extra="forbid")
-│   ├── service.py            # Agent 主流程状态机与用例编排
-│   ├── questions.py          # 反问引擎 (优先级计算、3 轮终止、安全默认)
-│   ├── prompt_compiler.py    # 8 层 Prompt 确定性编译器
-│   ├── workflow.py           # 工作流注册中心、能力选择算法与 PatchMap 补丁引擎
-│   ├── comfyui.py            # ComfyUI API 客户端与显式本地仿真
-│   ├── continuity.py         # 视听连续性检查
-│   └── llm.py                # 结构化 LLM 调用与自修复重试
-│
-├── server/                   # 🌐 服务端与持久化层 (FastAPI Backend & Storage)
-│   ├── __init__.py
-│   ├── config.py             # 集中配置中心 (Pydantic BaseSettings)
-│   ├── db.py                 # SQLite 持久化与不可变版本控制
-│   ├── api.py                # RESTful API 路由 (依赖并调用 agent.*)
-│   ├── main.py               # FastAPI 服务入口、生命周期管理、静态资源挂载
-│   └── cli.py                # 终端命令行 CLI 工具
-│
-├── web/                      # 🎨 独立前端界面 (Decoupled Web Frontend)
-│   ├── index.html            # 4 步向导式界面 (创意反问/简报/分镜/粗剪)
-│   ├── styles.css            # 暗黑电影质感 UI 样式
-│   └── app.js                # 前端业务状态控制与 REST API 调用
-│
-├── prompts/                  # 结构化 Prompt 模板
-│   ├── extract_brief.md       # 调用 A：输入要素抽取
-│   ├── build_screenplay.md    # 调用 B：剧本拆解与人物场景圣经
-│   └── build_shots.md         # 调用 C：分镜镜头拆解
-├── workflows/                # ComfyUI API 工作流模板集
-│   ├── flux_character_sheet_v1/ # Flux 角色与场景概念图工作流
-│   ├── wan_i2v_v1/              # Wan2.1 图生视频工作流
-│   └── cogvideox_t2v_v1/        # CogVideoX 文生视频工作流
-├── tests/                    # 核心流程回归测试
-│   ├── test_questions.py      # 反问引擎与优先级计算测试
-│   ├── test_prompt_compiler.py# 提示词分层与角色锁定测试
-│   ├── test_workflow_patch.py # PatchMap 注入与原始模板不变性测试
-│   ├── test_continuity.py     # 视听连续性校验测试
-│   ├── test_api.py            # FastAPI 端点生命周期集成测试
-│   ├── test_end_to_end.py     # 3 个典型场景端到端仿真与粗剪测试
-│   └── test_comfyui.py        # ComfyUI 输出解析与断线失败测试
-├── Dockerfile                # ModelScope Studio 容器构建规范 (端口 7860 + FFmpeg)
-├── app.py                    # 根目录统一启动入口
-├── requirements.txt          # 核心依赖清单
-├── pytest.ini                 # 测试配置
-└── .env.example               # 环境变量配置模板
-```
+导出不连接服务器的 ComfyUI、不检查服务器显存。模板匹配与参数编译不等于实际渲染验证。部分不匹配镜头在清单中明确标记，不会伪造工作流。旧模板若没有 UI 版本，仅提供 API 文件。旧 Wan 工作流须重新编译才能用升级后的 UI 模板导出。
 
----
+Wan 模板依据 [ComfyUI 官方示例](https://comfyanonymous.github.io/ComfyUI_examples/wan/) 更新，补齐文本编码器、VAE、视觉编码和原生采样链路；帧数按 4n+1 对齐。UI 与 API 文件使用同一组节点和参数。参考来源记录在 `workflows/wan_i2v_v1/SOURCE.md`。实际模型效果、显存和执行仍需在目标机器验证。
 
-## 🚀 快速开始
-
-### 1. 启动 Web 页面与 API 服务
+## 本地运行
 
 ```bash
-# 方式一：直接运行启动入口（默认端口 7860，兼容 ModelScope 创空间）
-python app.py
-
-# 方式二：通过 uvicorn 启动（可指定端口）
-python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+npm --prefix web install
+npm --prefix web run build
+cp .env.example .env
+# 在 .env 中配置 OPENAI_API_KEY、OPENAI_BASE_URL 和 OPENAI_MODEL。
+.venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port 8000
 ```
 
-在浏览器中打开：👉 **http://localhost:8000** 或 **http://localhost:7860**
+打开 http://localhost:8000 。开发前端可使用 `npm --prefix web run dev`。
 
-### 2. 作为独立 Headless Agent SDK 引入
+只有本地演示或测试才设置 `LLM_MOCK_MODE=true`；界面会明确显示演示模式。测试数据不代表真实 LLM 的创作质量。主流程不需要设置 `COMFYUI_MOCK_MODE`，也不需要运行 ComfyUI。可选在线渲染需要配置真实 ComfyUI 或 ModelScope 后端。
 
-在你的任何 Python 脚本或后台工作流中直接调用：
+## API / SDK
 
 ```python
-import asyncio
 from agent import MovieAgent
 
-async def main():
-    agent = MovieAgent()
-    project = agent.create_project("做一个赛博朋克雨夜追凶预告片")
-    await agent.analyze_input(project["id"])
-    await agent.confirm_brief(project["id"])
-    await agent.confirm_shots(project["id"])
-
-asyncio.run(main())
+agent = MovieAgent()
+project = agent.create_project("做一个雨夜车站的30秒悬疑短片")
+pid = project["id"]
+await agent.analyze_input(pid)
+await agent.confirm_brief(pid, generate=False)
+# 可选：agent.apply_auteur_profile(pid, profile_id, variant_id)
+treatments = await agent.generate_treatments(pid)
+# 展示 treatments.options 给用户，取得明确选择的 treatment_id。
+await agent.confirm_treatment(pid, treatment_id, generate=False)
+agent.start_auto_pipeline(pid)
+# 轮询 agent.get_pipeline_status(pid)，直到完成或失败。
 ```
 
-### 3. 命令行 CLI 交互
+关键接口：
+
+| 操作 | 接口 |
+|---|---|
+| 保存剧情 | `POST /api/projects/{id}/brief/confirm` |
+| 生成方案 | `POST /api/projects/{id}/treatments/generate` |
+| 确认方案 | `POST /api/projects/{id}/treatments/{treatment_id}/confirm` |
+| 开始／查询制作 | `POST / GET /api/projects/{id}/auto_pipeline` |
+| 校验并重新编译 | `POST /api/projects/{id}/packages/generate` |
+| 交付清单 | `GET /api/projects/{id}/delivery` |
+| ZIP 导出 | `GET /api/projects/{id}/export` |
+| 单镜头下载 | `GET /api/projects/{id}/workflow/{shot_id}?format=ui`（默认 api） |
+
+上游修改会使下游产物失效，旧文件即使仍在磁盘上也不能通过导出接口获取。后台制作中阻止修改，避免新旧内容混合。制作任务在单进程后台运行；服务重启后可依据已存产物重试，运行日志持久化到 SQLite，执行由项目租约互斥保护。
+
+## CLI
 
 ```bash
-# 查看所有已登记的 ComfyUI 工作流模板
-python -m server.cli workflows
-
-# 依据一句话创意全自动执行端到端生成
-python -m server.cli create --idea "做一个赛博朋克侦探在雨夜追凶的45秒预告片" --auto
-
-# 列出所有项目
-python -m server.cli list
+.venv/bin/python -m server.cli create --idea "30秒雨夜侦探短片"
+.venv/bin/python -m server.cli export --id prj_12345678 --output ./production.zip
 ```
 
-### 4. 运行全量测试套件
+CLI `create --auto` 是明确授权采用默认值和推荐方案并渲染成片的便捷模式；Web 主流程始终由用户选择。
+
+## 验证
 
 ```bash
-python -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt pytest pytest-asyncio
-.venv/bin/python -m pytest -q
+.venv/bin/pytest -q
+npm --prefix web run build
 ```
-测试数量与结果以实际执行输出为准。测试默认使用仿真 LLM 和测试图视频，不代表真实成片质量。
 
-参赛优化现状与后续验收见 [参赛清单](docs/competition-readiness.md)。
+测试覆盖状态顺序、显式方案选择、离线导出、UI/API 参数一致性、素材清单、时长与连续性校验、上游失效、并发保护，以及可选仿真渲染／粗剪。使用隔离临时数据库，不改动真实项目。历史技术方案文档保留作为设计记录，当前行为以本 README 与实现为准。
 
+## ModelScope Studio 部署
+
+Docker 镜像包含全部前端产物、后端、提示词和模板，并在构建时检查关键文件。默认将项目与 SQLite 存储在 `/mnt/workspace/movie-agent`。启动脚本仅为专用存储目录设置权限，随后切换到普通用户运行服务。`/api/health` 可核对部署版本和完整性。
+
+从旧版迁移时可通过一次性 Studio Secret `PROJECT_MIGRATION_B64` 注入压缩备份。迁移只创建不存在的项目，不覆盖已有数据；迁移完成后应删除该 Secret。备份不进入 Git 或镜像。
 
 ## 参赛工程增强
 
-实现情况、恢复流程、素材/声音操作与接口见 [运行手册](docs/competition-runbook.md)；[复现 Notebook](notebooks/reproduce.ipynb) 和 [12 条固定输入](evaluation/cases.json) 可直接运行。图生视频需要先上传并绑定参考图；仿真只证明工程链路。
+网页“一句话生成”、CLI `create --auto` 和 SDK `run_auto_pipeline` 共用全流程入口；Web `POST auto_pipeline?render=true` 启用成片模式，默认保留离线制作包流程。图生视频实际渲染前必须上传首帧。
+
+断点恢复、质检修正、素材授权、混音字幕及证据导出见 [运行手册](docs/competition-runbook.md)、[验证记录](docs/validation.md) 与 [复现 Notebook](notebooks/reproduce.ipynb)。

@@ -15,7 +15,7 @@ const SHOT_SIZES: ShotSize[] = ["ECU", "CU", "MCU", "MS", "MLS", "WS", "EWS"];
 
 interface UnifiedIssue {
   key: string;
-  source: "连续性" | "导演语法" | "名导技法";
+  source: "连续性" | "导演语法" | "导演技法";
   severity: "warning" | "error";
   shotIds: string[];
   message: string;
@@ -48,7 +48,7 @@ function unifyIssues(
     })),
     ...auteur.map((i, n) => ({
       key: `a${n}`,
-      source: "名导技法" as const,
+      source: "导演技法" as const,
       severity: i.severity,
       shotIds: i.shot_ids,
       message: `[${i.code}] ${i.message}`,
@@ -243,7 +243,7 @@ function ShotEditDrawer({
         top: "var(--topbar-h)",
         right: 0,
         bottom: 0,
-        width: 420,
+        width: "min(420px, 100vw)",
         maxWidth: "92vw",
         zIndex: 70,
         padding: 22,
@@ -261,7 +261,7 @@ function ShotEditDrawer({
         <button type="button" className="tag hover-lift" onClick={onClose}>关闭</button>
       </div>
       <p className="text-tertiary" style={{ fontSize: 12 }}>
-        保存后此镜头的 Prompt、工作流与粗剪将失效，需要重新编译与渲染。
+        保存后旧制作包将失效。确认修改并重新编译后，即可导出更新的工作流。
       </p>
       {field(
         "时长（秒，1-12）",
@@ -417,7 +417,7 @@ export function StoryboardStage({ projectId }: { projectId: string }) {
           disabled={errorCount > 0 || confirmShots.isPending}
           title={errorCount > 0 ? "存在错误，无法确认" : undefined}
         >
-          {confirmShots.isPending ? "正在编译…" : errorCount > 0 ? `修复 ${errorCount} 个错误后确认` : "确认镜头表"}
+          {confirmShots.isPending ? "正在编译…" : errorCount > 0 ? `修复 ${errorCount} 个错误后确认` : "确认修改并编译工作流"}
         </Button>
       </header>
 
@@ -487,7 +487,7 @@ export function StoryboardStage({ projectId }: { projectId: string }) {
       <StageFooter
         done={confirmed && errorCount === 0}
         hasNext
-        nextLabel="生成工作台"
+        nextLabel="导出工作流"
         onNext={onNextStage}
       />
     </div>

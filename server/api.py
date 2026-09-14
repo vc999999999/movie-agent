@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import re
 from typing import Annotated, Any, Literal, Optional
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Depends, Request
 from agent.media import AssetMetadata, Timeline
 from agent.execution import ProjectBusy, NeedsClarification, QualityFailed
 import json
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from agent.delivery import build_archive, delivery_snapshot, ui_workflow
 from pydantic import BaseModel, ConfigDict, Field
 
 from server.config import settings
@@ -15,7 +16,29 @@ from agent.service import project_service
 from agent.production_packs import auteur_profile_registry, production_pack_registry
 from agent.workflow import workflow_registry
 
-router = APIRouter(prefix="/api")
+async def protect_production(request: Request):
+    if request.method not in ("GET", "HEAD"):
+        project_id = request.path_params.get("project_id")
+        if project_id and not request.url.path.endswith("/auto_pipeline"):
+            try:
+                project_service.ensure_not_generating(project_id)
+            except ValueError as e:
+                raise HTTPException(status_code=409, detail=str(e))
+
+router = APIRouter(prefix="/api", dependencies=[Depends(protect_production)])
+
+@router.get("/capabilities")
+async def capabilities():
+    return {"demo_mode": settings.llm_mock_mode, "render_backend": settings.render_backend, "version": "0.3.0", "revision": settings.deployment_revision}
+
+
+@router.get("/health", summary="部署完整性检查")
+async def health():
+    required_prompts = ["extract_brief.md", "generate_treatments.md", "build_screenplay.md", "build_shots.md"]
+    prompts_ready = all((settings.prompts_dir / name).is_file() for name in required_prompts)
+    return {"status": "ok" if prompts_ready else "incomplete", "version": "0.3.0", "revision": settings.deployment_revision,
+            "prompt_templates_ready": prompts_ready, "workflow_templates": len(workflow_registry.profiles),
+            "persistent_storage": settings.data_dir.is_relative_to("/mnt/workspace"), "demo_mode": settings.llm_mock_mode}
 
 class RequestModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -32,7 +55,8 @@ class AnswerItem(RequestModel):
     answer: str = Field(min_length=1, max_length=2_000)
 
 class SubmitAnswersRequest(RequestModel):
-    answers: list[AnswerItem] = Field(min_length=1, max_length=3)
+    answers: list[AnswerItem] = Field(default_factory=list, max_length=3)
+    use_defaults: bool = False
 
 class UpdateBriefRequest(RequestModel):
     updates: dict[str, Any]
@@ -114,7 +138,7 @@ async def get_questions(project_id: str):
 async def submit_answers(project_id: str, req: SubmitAnswersRequest):
     try:
         answers_dicts = [a.model_dump() for a in req.answers]
-        q_resp = await project_service.answer_questions(project_id, answers_dicts)
+        q_resp = await project_service.answer_questions(project_id, answers_dicts, req.use_defaults)
         return q_resp
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -127,13 +151,13 @@ async def update_brief(project_id: str, req: UpdateBriefRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.post("/projects/{project_id}/brief/confirm", summary="确认创作简报并生成剧本")
+@router.post("/projects/{project_id}/brief/confirm", summary="确认剧情拆解并进入导演模板选择")
 async def confirm_brief(project_id: str, brief_data: Optional[dict[str, Any]] = None):
     try:
-        brief = await project_service.confirm_brief(project_id, brief_data)
+        brief = await project_service.confirm_brief(project_id, brief_data, generate=False)
         return {
             "status": "success",
-            "message": "简报已确认，剧本与分镜已自动生成",
+            "message": "简报已确认，请选择导演模板和方案",
             "brief": brief,
         }
     except ValueError as e:
@@ -192,10 +216,10 @@ async def get_treatments(project_id: str):
         raise HTTPException(status_code=404, detail="Treatments not found")
     return package
 
-@router.post("/projects/{project_id}/treatments/{treatment_id}/confirm", summary="确认导演方案并生成剧本与分镜")
+@router.post("/projects/{project_id}/treatments/{treatment_id}/confirm", summary="确认导演方案，准备生成制作流程")
 async def confirm_treatment(project_id: str, treatment_id: str, req: ConfirmTreatmentRequest):
     try:
-        selected = await project_service.confirm_treatment(project_id, treatment_id, req.production_pack_id)
+        selected = await project_service.confirm_treatment(project_id, treatment_id, req.production_pack_id, generate=False)
         return {"status": "success", "selected_treatment": selected}
     except ProjectBusy:
         raise
@@ -278,22 +302,49 @@ async def list_workflows():
     return list(workflow_registry.profiles.values())
 
 @router.get("/projects/{project_id}/workflow/{shot_id}", summary="下载指定镜头的 patched workflow JSON")
-async def download_patched_workflow(project_id: str, shot_id: str):
+async def download_patched_workflow(project_id: str, shot_id: str, format: Literal["api", "ui"] = "api"):
     if not SHOT_ID_RE.fullmatch(shot_id):
         raise HTTPException(status_code=400, detail="Invalid shot ID")
     plans = project_service.get_packages(project_id)["workflow_plans"]
     if not any(plan.get("shot_id") == shot_id and plan.get("status") == "matched" for plan in plans):
         raise HTTPException(status_code=404, detail="Active patched workflow not found")
-    file_path = project_file(project_id, "patched_workflows", f"{shot_id}_workflow.json")
+    plan = next(p for p in plans if p["shot_id"] == shot_id)
+    file_path = project_service._project_file(project_id, plan["patched_workflow_path"])
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Patched workflow not found")
-    return FileResponse(path=str(file_path), filename=f"{shot_id}_workflow.json", media_type="application/json")
+    if format == "ui":
+        import json
+        plan = next(p for p in plans if p["shot_id"] == shot_id)
+        try:
+            graph = ui_workflow(workflow_registry, plan["workflow_id"], json.loads(file_path.read_text()))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if graph is None:
+            raise HTTPException(status_code=404, detail="此旧模板只有 API 格式")
+        return Response(json.dumps(graph, ensure_ascii=False), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{shot_id}_ui.json"'})
+    return FileResponse(path=str(file_path), filename=f"{shot_id}_api.json", media_type="application/json")
+
+@router.get("/projects/{project_id}/delivery", summary="检查工作流交付包与素材依赖")
+async def get_delivery(project_id: str):
+    try:
+        return delivery_snapshot(project_service, project_id)[0]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/projects/{project_id}/export", summary="下载完整 ComfyUI 制作包 ZIP")
+async def export_project(project_id: str):
+    project_file(project_id)
+    try:
+        data = build_archive(project_service, project_id)
+        return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{project_id}_comfyui.zip"', "Cache-Control": "no-store"})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # Render & Execution
-@router.post("/projects/{project_id}/auto_pipeline", summary="生成集：后台启动全自动生成（可轮询状态）")
-async def auto_pipeline(project_id: str):
+@router.post("/projects/{project_id}/auto_pipeline", summary="后台生成剧本、分镜、提示词和工作流（不渲染）")
+async def auto_pipeline(project_id: str, render: bool = False):
     try:
-        return project_service.start_auto_pipeline(project_id)
+        return project_service.start_auto_pipeline(project_id, render=render)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

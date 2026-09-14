@@ -9,3 +9,7 @@ tests/
 *.md
 node_modules/
 web/dist/
+
+# Runtime LLM instructions and workflow provenance are required in the full image.
+!prompts/*.md
+!workflows/**/SOURCE.md

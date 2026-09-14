@@ -4,14 +4,16 @@ import { useProject } from "../api/queries";
 import { ErrorNotice } from "../components/ErrorNotice";
 import { onNextStageEvent } from "../components/nextStage";
 import { useShell } from "./ShellContext";
-import { STAGES, maxStageIndex, type StageId } from "./stages";
+import { STAGES, maxStageIndex, stageIndex, type StageId } from "./stages";
 import { StudioShell } from "./StudioShell";
 import { useUrlState } from "./urlState";
 import { BriefStage, BriefHome } from "../features/brief";
 import { AuteurStage } from "../features/auteur";
 import { TreatmentsStage } from "../features/treatments";
 import { BibleStage } from "../features/bible";
-import { StoryboardStage } from "../features/storyboard";
+
+import { RenderStage } from "../features/generation/RenderStage";
+import { ProductionStage } from "../features/storyboard/ProductionStage";
 import { GenerationStage } from "../features/generation";
 import { PreviewStage } from "../features/preview";
 
@@ -35,9 +37,11 @@ function StageView({ stage, projectId }: { stage: StageId; projectId: string }) 
     case "bible":
       return <BibleStage projectId={projectId} />;
     case "storyboard":
-      return <StoryboardStage projectId={projectId} />;
+      return <ProductionStage projectId={projectId} />;
     case "generation":
       return <GenerationStage projectId={projectId} />;
+    case "render":
+      return <RenderStage projectId={projectId} />;
     case "preview":
       return <PreviewStage projectId={projectId} />;
   }
@@ -55,8 +59,8 @@ export default function App() {
 
   const project = projectQuery.data?.project ?? null;
   const maxIdx = project ? maxStageIndex(project.status) : 0;
-  const fallbackStage = STAGES[maxIdx].id;
-  const requestedIdx = stage ? STAGES.find((s) => s.id === stage)?.index ?? 0 : -1;
+  const fallbackStage = project?.status === "director_review" ? "auteur" : STAGES[maxIdx].id;
+  const requestedIdx = stage ? stageIndex(stage) : -1;
   const activeStage: StageId =
     stage !== null && requestedIdx >= 0 && requestedIdx <= maxIdx ? stage : fallbackStage;
 
@@ -99,7 +103,7 @@ export default function App() {
     >
       <AnimatePresence mode="wait">
         <motion.div
-          key={activeStage}
+          key={`${project.id}-${activeStage}`}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}

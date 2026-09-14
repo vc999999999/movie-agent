@@ -131,6 +131,11 @@ class PromptCompiler:
         fps = shot.fps
         frame_count = max(16, int(round(shot.duration_seconds * fps)))
 
+        if workflow_profile and workflow_profile.get("frame_step", 1) > 1:
+            step = workflow_profile["frame_step"]
+            offset = workflow_profile.get("frame_offset", 0)
+            frame_count = max(offset + step, round((frame_count - offset) / step) * step + offset)
+
         # Workflow clamping
         if workflow_profile and "max_frames" in workflow_profile:
             max_f = workflow_profile["max_frames"]

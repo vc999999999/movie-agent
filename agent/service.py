@@ -56,6 +56,11 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         self.production_packs = production_pack_registry
         self.auteur_profiles = auteur_profile_registry
 
+    def ensure_not_generating(self, project_id: str) -> None:
+        task = self._pipeline_tasks.get(project_id)
+        if task and not task.done() and task is not asyncio.current_task():
+            raise ValueError("制作流程正在生成，请等待完成后再修改")
+
     def get_auteur_context(self, project_id: str) -> Optional[AuteurContext]:
         artifact = self.db.get_latest_artifact(project_id, "auteur_profile")
         return AuteurContext(**artifact["content"]) if artifact else None
@@ -72,6 +77,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         project = self.db.get_project(project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
+        self.ensure_not_generating(project_id)
         profile = self.auteur_profiles.get(profile_id)
         variant = self.auteur_profiles.variant(profile, variant_id)
         selection = AuteurSelection(
@@ -88,11 +94,12 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         ])
         self.db.save_artifact(project_id, "auteur_profile", context.model_dump(), status="confirmed")
         if project["status"] not in ("collecting", "brief_review"):
-            self.db.update_project_status(project_id, "brief_review")
+            self.db.update_project_status(project_id, "director_review")
         return context
 
     @exclusive
     def clear_auteur_profile(self, project_id: str) -> None:
+        self.ensure_not_generating(project_id)
         project = self.db.get_project(project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
@@ -102,7 +109,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             "auteur_report", "prompt_package", "workflow_plan", "production_report", "rough_cut",
         ])
         if project["status"] not in ("collecting", "brief_review"):
-            self.db.update_project_status(project_id, "brief_review")
+            self.db.update_project_status(project_id, "director_review")
 
     def _record_questions(self, response: QuestionsResponse) -> QuestionsResponse:
         self.db.save_artifact(
@@ -244,12 +251,16 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
 
     # Submit answers
     @exclusive
-    async def answer_questions(self, project_id: str, answers: list[dict[str, str]]) -> QuestionsResponse:
+    async def answer_questions(self, project_id: str, answers: list[dict[str, str]], use_defaults: bool = False) -> QuestionsResponse:
         project = self.db.get_project(project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
+        if project["status"] != "collecting":
+            raise ValueError("当前不在剧情补充阶段，请返回简报修改")
         current = self.get_questions(project_id)
+        if not answers:
+            return self._finish_brief_collection(project_id, project.get("brief", {}), project.get("round_count", 0))
         allowed_fields = {question.field for question in current.questions}
         answer_fields = [answer.get("field", "") for answer in answers]
         invalid_fields = sorted(set(answer_fields) - allowed_fields)
@@ -269,7 +280,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         )
 
         merged_brief = self._merge_brief(project_id, project.get("brief", {}), extraction)
-        return self._next_questions(project_id, merged_brief, extraction, round_num)
+        return self._next_questions(project_id, merged_brief, extraction, round_num, force_review=use_defaults)
 
     # 10.1 Brief review & confirm
     @exclusive
@@ -278,6 +289,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
+        self.ensure_not_generating(project_id)
         current = dict(project.get("brief", {}))
         current.update(updates)
         enforced = self.enforce_brief(project_id, current)
@@ -295,12 +307,12 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         return brief
 
     @exclusive
-    async def confirm_brief(self, project_id: str, confirmed_brief: Optional[dict[str, Any]] = None) -> CreativeBrief:
+    async def confirm_brief(self, project_id: str, confirmed_brief: Optional[dict[str, Any]] = None, *, generate: bool = True) -> CreativeBrief:
         project = self.db.get_project(project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
-        data = confirmed_brief or project.get("brief", {})
+        data = {**project.get("brief", {}), **(confirmed_brief or {})}
         if confirmed_brief and any(k in data and data[k] != v for k, v in self.constraints(project_id)["values"].items() if k != "character_count"):
             raise NeedsClarification("确认内容与用户明确要求冲突，请先澄清硬约束")
         brief = CreativeBrief(**sanitize_brief_dict(self.enforce_brief(project_id, data)))
@@ -311,10 +323,9 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             "auteur_report", "prompt_package", "workflow_plan", "production_report", "rough_cut",
         ])
         self.db.save_artifact(project_id, "creative_brief", brief.model_dump(), status="confirmed")
-        self.db.update_project_status(project_id, "screenplay_ready")
-
-        # Auto trigger screenplay generation
-        await self.generate_screenplay(project_id)
+        self.db.update_project_status(project_id, "director_review")
+        if generate:
+            await self.generate_screenplay(project_id)
         return brief
 
     @exclusive
@@ -323,6 +334,9 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
+        self.ensure_not_generating(project_id)
+        if project["status"] in ("collecting", "brief_review"):
+            raise ValueError("请先确认剧情简报")
         brief = CreativeBrief(**sanitize_brief_dict(project["brief"]))
         package = await self.llm.generate_treatments(
             brief,
@@ -359,6 +373,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         production_pack_id: Optional[str] = None,
         *, generate: bool = True,
     ) -> TreatmentOption:
+        self.ensure_not_generating(project_id)
         package = self.get_treatments(project_id)
         if not package:
             raise ValueError("Treatments have not been generated")
@@ -404,6 +419,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         self.db.save_artifact(project_id, "project_bible", screenplay_pkg.project_bible.model_dump(), status="confirmed")
         self.db.save_artifact(project_id, "screenplay", [s.model_dump() for s in screenplay_pkg.scenes], status="confirmed")
 
+        self.db.update_project_status(project_id, "screenplay_ready")
         # Automatically generate shot list
         if generate:
             await self.generate_shots(project_id)
@@ -439,6 +455,8 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         pack = FilmProductionPack(**pack_art["content"]) if pack_art else None
         auteur = self.get_auteur_context(project_id)
         shots = await self.llm.build_shot_list(screenplay_pkg, brief, pack, auteur)
+        if len({shot.shot_id for shot in shots}) != len(shots):
+            raise ValueError("镜头编号重复，请重新生成分镜")
 
         if not shots:
             raise ValueError("LLM returned an empty shot list")
@@ -449,7 +467,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         tolerance = target_dur * 0.05
         if not allow_invalid and abs(total_dur - target_dur) > tolerance:
             raise ValueError(
-                f"Shot duration total {total_dur:.1f}s exceeds the 5% tolerance for {target_dur}s"
+                f"分镜总时长 {total_dur:.1f} 秒与目标 {target_dur} 秒不符（允许误差 ±{tolerance:.1f} 秒），请重新生成分镜"
             )
 
         # Continuity check
@@ -476,6 +494,9 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
 
     @exclusive
     def update_shot(self, project_id: str, shot_id: str, shot_updates: dict[str, Any]) -> ShotSpec:
+        self.ensure_not_generating(project_id)
+        if set(shot_updates) & {"shot_id", "scene_id", "order"}:
+            raise ValueError("镜头编号、场景归属与顺序不可通过局部编辑修改")
         shots_data = self.get_shots(project_id)
         if not shots_data:
             raise ValueError(f"No shots found for project {project_id}")
@@ -567,6 +588,9 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         if errors:
             raise ValueError("Shot quality gate failed: " + json.dumps(errors, ensure_ascii=False))
 
+    def validate_shots_for_export(self, project_id: str) -> None:
+        self.validate_shots(project_id)
+
     @exclusive
     async def confirm_shots(self, project_id: str) -> list[dict[str, Any]]:
         shots_data = self.get_shots(project_id)
@@ -588,6 +612,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         if not project:
             raise ValueError(f"Project {project_id} not found")
 
+        self.ensure_not_generating(project_id)
         screenplay_data = self.get_screenplay(project_id)
         if not screenplay_data:
             raise ValueError("Screenplay required to compile packages")
@@ -606,7 +631,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         patched_dir = project_dir / "patched_workflows"
         patched_dir.mkdir(parents=True, exist_ok=True)
 
-        installed_nodes = set((await self.comfyui.get_object_info()).keys())
+        # Portable export does not depend on the server GPU or ComfyUI installation.
         pack_art = self.db.get_latest_artifact(project_id, "production_pack")
         preferred_workflow_id = pack_art["content"]["generation_recipe"]["workflow_id"] if pack_art else None
 
@@ -618,18 +643,12 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             plan = self.workflows.select_workflow(
                 shot,
                 aspect_ratio=bible.aspect_ratio,
-                comfyui_installed_nodes=installed_nodes,
+                check_environment=False,
                 preferred_workflow_id=preferred_workflow_id,
             )
 
             if plan.workflow_id:
                 plan.template_sha256 = self.workflow_digest(plan.workflow_id)
-            if shot.generation_mode == "image_to_video" and len(shot.reference_asset_ids) != 1:
-                plan.status = "precheck_failed"
-                plan.reason = "图生视频需要绑定一张真实首帧，请上传并绑定参考图"
-            if settings.render_backend == "modelscope" and (shot.reference_asset_ids or shot.generation_mode != "text_to_video"):
-                plan.status = "unsupported"
-                plan.reason = "当前云端适配器仅支持文生视频，不支持参考图"
             # 2. Compile prompt
             wf_profile = self.workflows.get_profile(plan.workflow_id).model_dump() if plan.workflow_id else None
             rules = self.workflows.get_prompt_rules(plan.workflow_id) if plan.workflow_id else {}
@@ -649,6 +668,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
                 _, err = self.workflows.patch_workflow(
                     workflow_id=plan.workflow_id,
                     prompt_pkg=prompt_pkg,
+                    first_frame_asset_path=f"{shot.shot_id}_first_frame.png" if shot.generation_mode == "image_to_video" else None,
                     output_file_path=out_path,
                 )
                 if not err:
@@ -668,6 +688,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         report_md = self._generate_production_report(project, bible, shots, prompt_packages, workflow_plans)
         self.db.save_artifact(project_id, "production_report", {"markdown": report_md}, status="confirmed")
 
+        self.db.update_project_status(project_id, "package_ready")
         return {
             "prompt_packages": prompt_packages,
             "workflow_plans": workflow_plans,
@@ -686,7 +707,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         matched_count = sum(1 for p in plans if p.get("status") == "matched")
 
         lines = [
-            f"# 🎬 《{bible.title}》 电影 Agent 制作与执行报告",
+            f"# 🎬 《{bible.title}》 幕间 制作与执行报告",
             f"\n- **项目 ID**: `{project['id']}`",
             f"- **成片时长**: 目标 {bible.target_duration} 秒 | 镜头总计 {total_dur:.1f} 秒 (误差: {abs(total_dur - bible.target_duration):.2f}s)",
             f"- **画面比例**: {bible.aspect_ratio}",
@@ -720,8 +741,8 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             ])
 
         lines.append("\n## 3. 下一步指引")
-        lines.append("- 点击前端或调用 `/api/shots/{shot_id}/render` 即可直接调度 ComfyUI 执行渲染。")
-        lines.append("- 全部镜头生成完成后，调用 `/api/projects/{project_id}/rough_cut` 即可调用 FFmpeg 自动合成为完整预告片短片。")
+        lines.append("- 在导出工作流页面下载完整制作包。根据素材需求准备首帧，将界面工作流拖入自己的 ComfyUI。")
+        lines.append("- 在线渲染与粗剪是可选功能；工作流编译完成不代表模型、素材或渲染结果已经验证。")
 
         return "\n".join(lines)
 
@@ -917,12 +938,12 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
     PIPELINE_STEPS = ["treatments", "treatment_choice", "screenplay", "shots", "quality", "packages", "render", "rough_cut"]
 
     @exclusive
-    async def run_auto_pipeline(self, project_id: str, *, evaluation_mode: str = "full") -> dict[str, Any]:
+    async def run_auto_pipeline(self, project_id: str, *, evaluation_mode: str = "full", render: bool = True) -> dict[str, Any]:
         if not self.db.get_project(project_id):
             raise ValueError(f"Project {project_id} not found")
         if evaluation_mode not in ("baseline", "rules", "full"):
             raise ValueError("Invalid evaluation mode")
-        state = {"steps": [], "status": "running", "error": None, "task_id": lease_context.get()[2], "mode": evaluation_mode}
+        state = {"steps": [], "status": "running", "error": None, "task_id": lease_context.get()[2], "mode": evaluation_mode, "render": render}
         meter = {"llm_calls": 0, "input_tokens": 0, "output_tokens": 0, "usage_available": False}
         meter_token = metrics_context.set(meter)
         evaluation_token = evaluation_context.set(evaluation_mode)
@@ -930,9 +951,9 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         started = time.monotonic()
         self.db.save_artifact(project_id, "pipeline_progress", state, status="running")
         try:
-            result = await self._run_auto_pipeline_steps(project_id, evaluation_mode=evaluation_mode)
+            result = await self._run_auto_pipeline_steps(project_id, evaluation_mode=evaluation_mode, render=render)
             state["status"] = "completed"
-            self.db.update_project_status(project_id, "completed")
+            self.db.update_project_status(project_id, "completed" if render else "package_ready")
             return result
         except (Exception, asyncio.CancelledError) as exc:
             state["status"] = "needs_clarification" if isinstance(exc, NeedsClarification) else "quality_failed" if isinstance(exc, QualityFailed) else "failed"
@@ -946,7 +967,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             evaluation_context.reset(evaluation_token)
             self.db.save_artifact(project_id, "pipeline_progress", state, status=state["status"])
 
-    async def _run_auto_pipeline_steps(self, project_id: str, *, evaluation_mode: str = "full") -> dict[str, Any]:
+    async def _run_auto_pipeline_steps(self, project_id: str, *, evaluation_mode: str = "full", render: bool = True) -> dict[str, Any]:
         """Execute the full generation chain from the current project state.
 
         Starts at whichever step is next for the project's status; reuses
@@ -988,13 +1009,20 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             except Exception as e:
                 self.handoff(project_id, role, step, before, started, status="failed", error=str(e)[:500])
                 record(step, "failed", error=str(e)[:500])
+                self._pipeline_progress[project_id]["status"] = "failed"
+                self._pipeline_progress[project_id]["error"] = str(e)[:500]
                 raise
 
+        if not render and not self.db.get_latest_artifact(project_id, "selected_treatment"):
+            raise ValueError("请先选择并确认导演方案")
         if not project.get("brief"):
             await run_step("analysis", lambda: self.analyze_input(project_id))
         project = self.db.get_project(project_id)
         if project["status"] == "collecting":
             self._finish_brief_collection(project_id, project["brief"], project["round_count"])
+
+        if self.db.get_project(project_id)["status"] == "brief_review":
+            await self.confirm_brief(project_id, generate=False)
 
         # 1-2. Treatments (only needed before one has been confirmed).
         # confirm_brief jumps straight to screenplay_ready, so rely on the
@@ -1038,11 +1066,14 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
         packages = self.get_packages(project_id)
         if not packages.get("prompt_packages") or any(p.get("template_sha256") != self.workflow_digest(p["workflow_id"]) for p in packages.get("workflow_plans", []) if p.get("workflow_id")):
             await run_step(
-                "packages", lambda: self.compile_packages(project_id),
-                lambda p: f"{len(p.get('prompt_packages', []))} 个镜头包",
+                "packages", lambda: self.confirm_shots(project_id),
+                lambda p: f"{len(p)} 个镜头包",
             )
         else:
             record("packages", "done", detail="已编译，跳过")
+
+        if not render:
+            return {"project_id": project_id, "steps": log, "status": "completed"}
 
         # 6. Render every shot sequentially
         async def render_checked():
@@ -1065,11 +1096,14 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
     _pipeline_progress: dict[str, dict[str, Any]] = {}
     _pipeline_tasks: dict[str, asyncio.Task] = {}
 
-    def start_auto_pipeline(self, project_id: str) -> dict[str, Any]:
+    def start_auto_pipeline(self, project_id: str, *, render: bool = False) -> dict[str, Any]:
         """Start the auto pipeline as a background task (idempotent)."""
         project = self.db.get_project(project_id)
         if not project:
             raise ValueError(f"Project {project_id} not found")
+
+        if not render and not self.db.get_latest_artifact(project_id, "selected_treatment"):
+            raise ValueError("请先选择并确认导演方案")
 
         existing = self._pipeline_tasks.get(project_id)
         if (existing and not existing.done()) or self.db.lease_active(project_id):
@@ -1079,7 +1113,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
 
         async def runner() -> None:
             try:
-                await self.run_auto_pipeline(project_id)
+                await self.run_auto_pipeline(project_id, render=render)
             except Exception as exc:
                 if self._pipeline_progress[project_id]["status"] == "running":
                     self._pipeline_progress[project_id].update(status="failed", error=str(exc)[:500])
@@ -1124,7 +1158,7 @@ class ProjectService(MediaProduction, QualityProduction, EvidenceProduction):
             "rough_cut": bool(self.db.get_latest_artifact(project_id, "rough_cut")),
             "quality": bool(self.db.get_latest_artifact(project_id, "quality_review")),
         }
-        if progress["status"] == "completed" and not artifacts["rough_cut"]:
+        if progress["status"] == "completed" and not artifacts["rough_cut" if progress.get("render", True) else "packages"]:
             progress.update(status="idle", error="输入或时间线已更新，请恢复生成或重新合成")
         # Render status from artifacts/runs even when not running via pipeline
         shot_list = self.get_shots(project_id)

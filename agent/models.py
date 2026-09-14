@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 ProjectStatus = Literal[
     "collecting",          # 正在理解输入/反问
     "brief_review",        # 等待用户确认创作简报
+    "director_review",     # 简报已确认，等待导演模板
     "treatment_review",    # 等待用户选择导演方案
     "screenplay_ready",    # 剧本拆解完成
     "shots_review",        # 等待用户确认镜头表
@@ -247,6 +248,8 @@ class WorkflowProfile(StrictBaseModel):
     supported_aspect_ratios: list[str]
     min_vram_gb: int
     max_frames: int
+    frame_step: int = 1
+    frame_offset: int = 0
     required_models: list[str]
     required_nodes: list[str]
     accepted_references: list[Literal["character", "style", "first_frame", "last_frame"]]

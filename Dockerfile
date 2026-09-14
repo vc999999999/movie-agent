@@ -12,7 +12,9 @@ RUN npm run build
 FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    DATA_DIR=/mnt/workspace/movie-agent \
+    SQLITE_DB_PATH=/mnt/workspace/movie-agent/movie_agent.db
 
 WORKDIR /home/user/app
 
@@ -37,9 +39,13 @@ COPY --chown=movie-agent:movie-agent auteur_profiles auteur_profiles
 COPY --chown=movie-agent:movie-agent app.py .
 COPY --from=web-builder --chown=movie-agent:movie-agent /build/web/dist web/dist
 
-USER movie-agent
+# Fail the image build if any part of the production/export flow is missing.
+RUN python -c "from pathlib import Path; required = ['prompts/extract_brief.md', 'prompts/generate_treatments.md', 'prompts/build_screenplay.md', 'prompts/build_shots.md', 'agent/delivery.py', 'workflows/wan_i2v_v1/workflow_ui.json', 'workflows/wan_i2v_v1/widget_map.json', 'workflows/wan_i2v_v1/SOURCE.md', 'web/dist/index.html']; missing = [p for p in required if not Path(p).is_file()]; assert not missing, f'Missing runtime files: {missing}'"
+
+
+# Bootstrap prepares the mounted storage then drops privileges to movie-agent.
 
 # Expose ModelScope Studio required port 7860
 EXPOSE 7860
 
-CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["python", "-m", "server.bootstrap"]
